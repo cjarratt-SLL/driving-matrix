@@ -1,11 +1,14 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from app.config import settings
 from app.routers.trip_routes import router as trip_router
+from app.routers.resident_routes import router as resident_router
+from app.routers.location_routes import router as location_router
 
-app = FastAPI(title="Driving Matrix API")
+app = FastAPI(title=settings.app_name)
 
 origins = [
-    "http://localhost:5173",
+    settings.frontend_origin,
 ]
 
 app.add_middleware(
@@ -17,11 +20,12 @@ app.add_middleware(
 )
 
 app.include_router(trip_router)
-
+app.include_router(resident_router)
+app.include_router(location_router)
 
 @app.get("/")
 def root():
-    return {"message": "Driving Matrix API is running"}
+    return {"message": f"{settings.app_name} is running"}
 
 
 @app.get("/health")
