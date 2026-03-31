@@ -3,6 +3,7 @@ from app.models.driver_models import Driver
 from app.models.location_models import Location
 from app.models.resident_models import Resident
 from app.models.trip_models import Trip
+from app.models.vehicle_models import Vehicle
 
 DATABASE_URL = "sqlite:///driving_matrix.db"
 

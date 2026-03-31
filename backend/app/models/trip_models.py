@@ -11,9 +11,11 @@ class Trip(SQLModel, table=True):
     pickup_location_id: int
     dropoff_location_id: int
 
+    pickup_time: datetime
     arrival_time: datetime
+    estimated_duration_minutes: int = 30
 
     status: str = "scheduled"
 
     driver_id: Optional[int] = None
-    assigned_vehicle: Optional[str] = None
+    vehicle_id: Optional[int] = None
