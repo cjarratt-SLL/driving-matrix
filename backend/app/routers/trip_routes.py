@@ -1,63 +1,69 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, Depends, HTTPException
+from sqlmodel import Session, select
 
+from app.db import get_session
+from app.models.driver_models import Driver
+from app.models.location_models import Location
+from app.models.resident_models import Resident
+from app.models.trip_models import Trip
 from app.schemas.trip_schemas import TripCreate, TripRead, TripDetailRead
-from app.storage import locations_db, residents_db, trips_db
 
 router = APIRouter(prefix="/trips", tags=["Trips"])
 
 
 @router.post("", response_model=TripRead)
-def create_trip(trip: TripCreate):
-    resident = next((r for r in residents_db if r.id == trip.resident_id), None)
+def create_trip(
+    trip: TripCreate,
+    session: Session = Depends(get_session),
+):
+    resident = session.get(Resident, trip.resident_id)
     if resident is None:
         raise HTTPException(status_code=404, detail="Resident not found")
 
-    pickup_location = next(
-        (loc for loc in locations_db if loc.id == trip.pickup_location_id),
-        None,
-    )
+    pickup_location = session.get(Location, trip.pickup_location_id)
     if pickup_location is None:
         raise HTTPException(status_code=404, detail="Pickup location not found")
 
-    dropoff_location = next(
-        (loc for loc in locations_db if loc.id == trip.dropoff_location_id),
-        None,
-    )
+    dropoff_location = session.get(Location, trip.dropoff_location_id)
     if dropoff_location is None:
         raise HTTPException(status_code=404, detail="Dropoff location not found")
 
-    new_trip = TripRead(
-        id=len(trips_db) + 1,
+    if trip.driver_id is not None:
+        driver = session.get(Driver, trip.driver_id)
+        if driver is None:
+            raise HTTPException(status_code=404, detail="Driver not found")
+
+    new_trip = Trip(
         resident_id=trip.resident_id,
         pickup_location_id=trip.pickup_location_id,
         dropoff_location_id=trip.dropoff_location_id,
         arrival_time=trip.arrival_time,
         status="scheduled",
-        assigned_driver=None,
+        driver_id=trip.driver_id,
         assigned_vehicle=None,
     )
-    trips_db.append(new_trip)
+    session.add(new_trip)
+    session.commit()
+    session.refresh(new_trip)
     return new_trip
 
 
 @router.get("", response_model=list[TripRead])
-def list_trips():
-    return trips_db
+def list_trips(session: Session = Depends(get_session)):
+    trips = session.exec(select(Trip)).all()
+    return trips
+
 
 @router.get("/details", response_model=list[TripDetailRead])
-def list_trip_details():
+def list_trip_details(session: Session = Depends(get_session)):
+    trips = session.exec(select(Trip)).all()
     trip_details = []
 
-    for trip in trips_db:
-        resident = next((r for r in residents_db if r.id == trip.resident_id), None)
-        pickup_location = next(
-            (loc for loc in locations_db if loc.id == trip.pickup_location_id),
-            None,
-        )
-        dropoff_location = next(
-            (loc for loc in locations_db if loc.id == trip.dropoff_location_id),
-            None,
-        )
+    for trip in trips:
+        resident = session.get(Resident, trip.resident_id)
+        pickup_location = session.get(Location, trip.pickup_location_id)
+        dropoff_location = session.get(Location, trip.dropoff_location_id)
+        driver = session.get(Driver, trip.driver_id) if trip.driver_id is not None else None
 
         if resident is None or pickup_location is None or dropoff_location is None:
             continue
@@ -73,7 +79,8 @@ def list_trip_details():
                 dropoff_location_name=dropoff_location.name,
                 arrival_time=trip.arrival_time,
                 status=trip.status,
-                assigned_driver=trip.assigned_driver,
+                driver_id=trip.driver_id,
+                driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
                 assigned_vehicle=trip.assigned_vehicle,
             )
         )

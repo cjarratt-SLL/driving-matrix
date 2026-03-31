@@ -3,7 +3,7 @@ from typing import Optional
 from sqlmodel import Field, SQLModel
 
 
-class Resident(SQLModel, table=True):
+class Driver(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
 
     first_name: str
@@ -11,8 +11,8 @@ class Resident(SQLModel, table=True):
 
     is_active: bool = True
 
-    rideshare_able: bool = True
+    phone_number: Optional[str] = None
 
-    home_address: Optional[str] = None
+    vehicle_assigned: Optional[str] = None
 
     notes: Optional[str] = None

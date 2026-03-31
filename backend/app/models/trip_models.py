@@ -1,19 +1,19 @@
-from pydantic import BaseModel
-from typing import Optional
 from datetime import datetime
+from typing import Optional
+
+from sqlmodel import Field, SQLModel
 
 
-class Trip(BaseModel):
-    id: Optional[int] = None
+class Trip(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
 
-    resident_name: str
-
-    pickup_location: str
-    dropoff_location: str
+    resident_id: int
+    pickup_location_id: int
+    dropoff_location_id: int
 
     arrival_time: datetime
 
     status: str = "scheduled"
 
-    assigned_driver: Optional[str] = None
+    driver_id: Optional[int] = None
     assigned_vehicle: Optional[str] = None

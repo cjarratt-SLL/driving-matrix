@@ -9,6 +9,7 @@ class TripCreate(BaseModel):
     pickup_location_id: int
     dropoff_location_id: int
     arrival_time: datetime
+    driver_id: Optional[int] = None
 
 
 class TripRead(BaseModel):
@@ -18,7 +19,8 @@ class TripRead(BaseModel):
     dropoff_location_id: int
     arrival_time: datetime
     status: str = "scheduled"
-    assigned_driver: Optional[str] = None
+    driver_id: Optional[int] = None
+    driver_name: Optional[str] = None
     assigned_vehicle: Optional[str] = None
 
 class TripDetailRead(BaseModel):
@@ -31,5 +33,5 @@ class TripDetailRead(BaseModel):
     dropoff_location_name: str
     arrival_time: datetime
     status: str = "scheduled"
-    assigned_driver: Optional[str] = None
+    driver_id: Optional[int] = None
     assigned_vehicle: Optional[str] = None
