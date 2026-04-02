@@ -68,12 +68,20 @@ def create_trip(
         vehicle = session.get(Vehicle, trip.vehicle_id)
         if vehicle is None:
             raise HTTPException(status_code=404, detail="Vehicle not found")
-
+        
+    if trip.dropoff_time <= trip.pickup_time:
+        raise HTTPException(
+            status_code=400,
+            detail="dropoff_time must be after pickup_time",
+        )
+    
     new_trip = Trip(
         resident_id=trip.resident_id,
         pickup_location_id=trip.pickup_location_id,
         dropoff_location_id=trip.dropoff_location_id,
-        arrival_time=trip.arrival_time,
+        pickup_time=trip.pickup_time,
+        dropoff_time=trip.dropoff_time,
+        estimated_duration_minutes=trip.estimated_duration_minutes,
         status="scheduled",
         driver_id=trip.driver_id,
         vehicle_id=trip.vehicle_id,
@@ -138,17 +146,38 @@ def update_trip(
                 raise HTTPException(status_code=404, detail="Vehicle not found")
         trip.vehicle_id = vehicle_id
 
-    if "arrival_time" in update_data:
-        arrival_time = update_data["arrival_time"]
-        if arrival_time is None:
-            raise HTTPException(status_code=400, detail="arrival_time cannot be null")
-        trip.arrival_time = arrival_time
+    if "pickup_time" in update_data:
+        pickup_time = update_data["pickup_time"]
+        if pickup_time is None:
+            raise HTTPException(status_code=400, detail="pickup_time cannot be null")
+        trip.pickup_time = pickup_time
+
+    if "dropoff_time" in update_data:
+        dropoff_time = update_data["dropoff_time"]
+        if dropoff_time is None:
+            raise HTTPException(status_code=400, detail="dropoff_time cannot be null")
+        trip.dropoff_time = dropoff_time
+
+    if "estimated_duration_minutes" in update_data:
+        estimated_duration_minutes = update_data["estimated_duration_minutes"]
+        if estimated_duration_minutes is None:
+            raise HTTPException(
+                status_code=400,
+                detail="estimated_duration_minutes cannot be null",
+            )
+        trip.estimated_duration_minutes = estimated_duration_minutes
 
     if "status" in update_data:
         status = update_data["status"]
         if status is None:
             raise HTTPException(status_code=400, detail="status cannot be null")
         trip.status = status
+
+    if trip.dropoff_time <= trip.pickup_time:
+        raise HTTPException(
+            status_code=400,
+            detail="dropoff_time must be after pickup_time",
+        )
 
     session.add(trip)
     session.commit()
@@ -176,23 +205,25 @@ def list_trip_details(session: Session = Depends(get_session)):
         if resident is None or pickup_location is None or dropoff_location is None:
             continue
 
-        trip_details.append(
-            TripDetailRead(
-                id=trip.id,
-                resident_id=trip.resident_id,
-                resident_name=f"{resident.first_name} {resident.last_name}",
-                pickup_location_id=trip.pickup_location_id,
-                pickup_location_name=pickup_location.name,
-                dropoff_location_id=trip.dropoff_location_id,
-                dropoff_location_name=dropoff_location.name,
-                arrival_time=trip.arrival_time,
-                status=trip.status,
-                driver_id=trip.driver_id,
-                driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
-                vehicle_id=trip.vehicle_id,
-                vehicle_name=vehicle.name if vehicle else None,
-            )
+    trip_details.append(
+        TripDetailRead(
+            id=trip.id,
+            resident_id=trip.resident_id,
+            resident_name=f"{resident.first_name} {resident.last_name}",
+            pickup_location_id=trip.pickup_location_id,
+            pickup_location_name=pickup_location.name,
+            dropoff_location_id=trip.dropoff_location_id,
+            dropoff_location_name=dropoff_location.name,
+            pickup_time=trip.pickup_time,
+            dropoff_time=trip.dropoff_time,
+            estimated_duration_minutes=trip.estimated_duration_minutes,
+            status=trip.status,
+            driver_id=trip.driver_id,
+            driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
+            vehicle_id=trip.vehicle_id,
+            vehicle_name=vehicle.name if vehicle else None,
         )
+    )
 
     return trip_details
 
@@ -205,7 +236,7 @@ def list_trips_for_date(
     trip_details = []
 
     for trip in trips:
-        if trip.arrival_time.date() != trip_date:
+        if trip.pickup_time.date() != trip_date:
             continue
 
         resident = session.get(Resident, trip.resident_id)
@@ -226,7 +257,9 @@ def list_trips_for_date(
                 pickup_location_name=pickup_location.name,
                 dropoff_location_id=trip.dropoff_location_id,
                 dropoff_location_name=dropoff_location.name,
-                arrival_time=trip.arrival_time,
+                pickup_time=trip.pickup_time,
+                dropoff_time=trip.dropoff_time,
+                estimated_duration_minutes=trip.estimated_duration_minutes,
                 status=trip.status,
                 driver_id=trip.driver_id,
                 driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
@@ -235,7 +268,7 @@ def list_trips_for_date(
             )
         )
 
-    return sorted(trip_details, key=lambda t: t.arrival_time)
+    return sorted(trip_details, key=lambda t: t.pickup_time)
 
 @router.get("/schedule/conflicts", response_model=DailyScheduleConflicts)
 def get_schedule_conflicts(
@@ -251,7 +284,7 @@ def get_schedule_conflicts(
     vehicle_seen = {}
 
     for trip in trips:
-        if trip.arrival_time.date() != trip_date:
+        if trip.pickup_time.date() != trip_date:
             continue
 
         resident = session.get(Resident, trip.resident_id)
@@ -295,7 +328,7 @@ def get_schedule_conflicts(
                 }
 
         if trip.vehicle_id is not None:
-            vehicle_key = (trip.vehicle_id, trip.arrival_time)
+            vehicle_key = (trip.vehicle_id, trip.pickup_time, trip.dropoff_time)
             if vehicle_key in vehicle_seen:
                 vehicle_conflicts.append(
                     TripConflictItem(
@@ -340,7 +373,7 @@ def list_trips_grouped_by_driver(
     grouped = {}
 
     for trip in trips:
-        if trip.arrival_time.date() != trip_date:
+        if trip.pickup_time.date() != trip_date:
             continue
 
         resident = session.get(Resident, trip.resident_id)
@@ -367,7 +400,9 @@ def list_trips_grouped_by_driver(
             pickup_location_name=pickup_location.name,
             dropoff_location_id=trip.dropoff_location_id,
             dropoff_location_name=dropoff_location.name,
-            arrival_time=trip.arrival_time,
+            pickup_time=trip.pickup_time,
+            dropoff_time=trip.dropoff_time,
+            estimated_duration_minutes=trip.estimated_duration_minutes,
             status=trip.status,
             driver_id=trip.driver_id,
             driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
@@ -386,7 +421,7 @@ def list_trips_grouped_by_driver(
 
     groups = []
     for group in grouped.values():
-        sorted_trips = sorted(group["trips"], key=lambda t: t.arrival_time)
+        sorted_trips = sorted(group["trips"], key=lambda t: t.pickup_time)
         groups.append(
             DriverScheduleGroup(
                 driver_id=group["driver_id"],
@@ -411,7 +446,7 @@ def list_trips_grouped_by_vehicle(
     grouped = {}
 
     for trip in trips:
-        if trip.arrival_time.date() != trip_date:
+        if trip.pickup_time.date() != trip_date:
             continue
 
         resident = session.get(Resident, trip.resident_id)
@@ -438,7 +473,9 @@ def list_trips_grouped_by_vehicle(
             pickup_location_name=pickup_location.name,
             dropoff_location_id=trip.dropoff_location_id,
             dropoff_location_name=dropoff_location.name,
-            arrival_time=trip.arrival_time,
+            pickup_time=trip.pickup_time,
+            dropoff_time=trip.dropoff_time,
+            estimated_duration_minutes=trip.estimated_duration_minutes,
             status=trip.status,
             driver_id=trip.driver_id,
             driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
@@ -457,7 +494,7 @@ def list_trips_grouped_by_vehicle(
 
     groups = []
     for group in grouped.values():
-        sorted_trips = sorted(group["trips"], key=lambda t: t.arrival_time)
+        sorted_trips = sorted(group["trips"], key=lambda t: t.pickup_time)
         groups.append(
             VehicleScheduleGroup(
                 vehicle_id=group["vehicle_id"],

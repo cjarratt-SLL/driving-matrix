@@ -12,7 +12,8 @@ class Trip(SQLModel, table=True):
     dropoff_location_id: int
 
     pickup_time: datetime
-    arrival_time: datetime
+    dropoff_time: datetime
+
     estimated_duration_minutes: int = 30
 
     status: str = "scheduled"

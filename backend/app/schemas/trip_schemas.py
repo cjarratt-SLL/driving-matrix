@@ -8,7 +8,9 @@ class TripCreate(BaseModel):
     resident_id: int
     pickup_location_id: int
     dropoff_location_id: int
-    arrival_time: datetime
+    pickup_time: datetime
+    dropoff_time: datetime
+    estimated_duration_minutes: int = 30
     driver_id: Optional[int] = None
     vehicle_id: Optional[int] = None
 
@@ -18,12 +20,15 @@ class TripRead(BaseModel):
     resident_id: int
     pickup_location_id: int
     dropoff_location_id: int
-    arrival_time: datetime
+    pickup_time: datetime
+    dropoff_time: datetime
+    estimated_duration_minutes: int = 30
     status: str = "scheduled"
     driver_id: Optional[int] = None
     driver_name: Optional[str] = None
     vehicle_id: Optional[int] = None
     vehicle_name: Optional[str] = None
+
 
 class TripDetailRead(BaseModel):
     id: Optional[int] = None
@@ -33,18 +38,23 @@ class TripDetailRead(BaseModel):
     pickup_location_name: str
     dropoff_location_id: int
     dropoff_location_name: str
-    arrival_time: datetime
+    pickup_time: datetime
+    dropoff_time: datetime
+    estimated_duration_minutes: int = 30
     status: str = "scheduled"
     driver_id: Optional[int] = None
     driver_name: Optional[str] = None
     vehicle_id: Optional[int] = None
     vehicle_name: Optional[str] = None
 
+
 class TripUpdate(BaseModel):
     resident_id: Optional[int] = None
     pickup_location_id: Optional[int] = None
     dropoff_location_id: Optional[int] = None
-    arrival_time: Optional[datetime] = None
+    pickup_time: Optional[datetime] = None
+    dropoff_time: Optional[datetime] = None
+    estimated_duration_minutes: Optional[int] = None
     status: Optional[str] = None
     driver_id: Optional[int] = None
     vehicle_id: Optional[int] = None
