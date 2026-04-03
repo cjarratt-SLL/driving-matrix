@@ -98,7 +98,7 @@ def find_assignment_conflict(
 
 class TripConflictItem(BaseModel):
     trip_id: int
-    arrival_time: str
+    pickup_time: str
     resident_name: str
     driver_name: Optional[str] = None
     vehicle_name: Optional[str] = None
@@ -410,7 +410,7 @@ def get_schedule_conflicts(
                         driver_conflicts.append(
                             TripConflictItem(
                                 trip_id=trip.id,
-                                arrival_time=trip.pickup_time.isoformat(),
+                                pickup_time=trip.pickup_time.isoformat(),
                                 resident_name=resident_name,
                                 driver_name=driver_name,
                                 vehicle_name=vehicle_name,
@@ -421,7 +421,7 @@ def get_schedule_conflicts(
                         driver_conflicts.append(
                             TripConflictItem(
                                 trip_id=seen_trip["trip_id"],
-                                arrival_time=seen_trip["arrival_time"],
+                                pickup_time=seen_trip["pickup_time"],
                                 resident_name=seen_trip["resident_name"],
                                 driver_name=seen_trip["driver_name"],
                                 vehicle_name=seen_trip["vehicle_name"],
@@ -432,7 +432,7 @@ def get_schedule_conflicts(
                 {
                     "trip": trip,
                     "trip_id": trip.id,
-                    "arrival_time": trip.pickup_time.isoformat(),
+                    "pickup_time": trip.pickup_time.isoformat(),
                     "resident_name": resident_name,
                     "driver_name": driver_name,
                     "vehicle_name": vehicle_name,
@@ -449,7 +449,7 @@ def get_schedule_conflicts(
                         vehicle_conflicts.append(
                             TripConflictItem(
                                 trip_id=trip.id,
-                                arrival_time=trip.pickup_time.isoformat(),
+                                pickup_time=trip.pickup_time.isoformat(),
                                 resident_name=resident_name,
                                 driver_name=driver_name,
                                 vehicle_name=vehicle_name,
@@ -460,7 +460,7 @@ def get_schedule_conflicts(
                         vehicle_conflicts.append(
                             TripConflictItem(
                                 trip_id=seen_trip["trip_id"],
-                                arrival_time=seen_trip["arrival_time"],
+                                pickup_time=seen_trip["pickup_time"],
                                 resident_name=seen_trip["resident_name"],
                                 driver_name=seen_trip["driver_name"],
                                 vehicle_name=seen_trip["vehicle_name"],
@@ -471,7 +471,7 @@ def get_schedule_conflicts(
                 {
                     "trip": trip,
                     "trip_id": trip.id,
-                    "arrival_time": trip.pickup_time.isoformat(),
+                    "pickup_time": trip.pickup_time.isoformat(),
                     "resident_name": resident_name,
                     "driver_name": driver_name,
                     "vehicle_name": vehicle_name,
