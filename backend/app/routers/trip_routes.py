@@ -20,6 +20,44 @@ def trips_overlap(first_trip: Trip, second_trip: Trip) -> bool:
         and second_trip.pickup_time < first_trip.dropoff_time
     )
 
+def find_assignment_conflict(
+    *,
+    session: Session,
+    trip_id_to_ignore: Optional[int],
+    driver_id: Optional[int],
+    vehicle_id: Optional[int],
+    pickup_time,
+    dropoff_time,
+) -> Optional[str]:
+    existing_trips = session.exec(select(Trip)).all()
+
+    candidate_trip = Trip(
+        pickup_time=pickup_time,
+        dropoff_time=dropoff_time,
+        resident_id=0,
+        pickup_location_id=0,
+        dropoff_location_id=0,
+        estimated_duration_minutes=0,
+        status="scheduled",
+        driver_id=driver_id,
+        vehicle_id=vehicle_id,
+    )
+
+    for existing_trip in existing_trips:
+        if trip_id_to_ignore is not None and existing_trip.id == trip_id_to_ignore:
+            continue
+
+        if not trips_overlap(candidate_trip, existing_trip):
+            continue
+
+        if driver_id is not None and existing_trip.driver_id == driver_id:
+            return "Driver already has an overlapping trip"
+
+        if vehicle_id is not None and existing_trip.vehicle_id == vehicle_id:
+            return "Vehicle already has an overlapping trip"
+
+    return None
+
 class TripConflictItem(BaseModel):
     trip_id: int
     arrival_time: str
@@ -49,6 +87,7 @@ class VehicleGroupedSchedule(BaseModel):
     groups: list[VehicleScheduleGroup]
 
 @router.post("", response_model=TripRead)
+
 def create_trip(
     trip: TripCreate,
     session: Session = Depends(get_session),
@@ -80,6 +119,16 @@ def create_trip(
             status_code=400,
             detail="dropoff_time must be after pickup_time",
         )
+    assignment_conflict = find_assignment_conflict(
+            session=session,
+            trip_id_to_ignore=None,
+            driver_id=trip.driver_id,
+            vehicle_id=trip.vehicle_id,
+            pickup_time=trip.pickup_time,
+            dropoff_time=trip.dropoff_time,
+        )
+    if assignment_conflict is not None:
+            raise HTTPException(status_code=400, detail=assignment_conflict)
     
     new_trip = Trip(
         resident_id=trip.resident_id,
@@ -184,6 +233,18 @@ def update_trip(
             status_code=400,
             detail="dropoff_time must be after pickup_time",
         )
+
+    assignment_conflict = find_assignment_conflict(
+        session=session,
+        trip_id_to_ignore=trip.id,
+        driver_id=trip.driver_id,
+        vehicle_id=trip.vehicle_id,
+        pickup_time=trip.pickup_time,
+        dropoff_time=trip.dropoff_time,
+    )
+
+    if assignment_conflict is not None:
+        raise HTTPException(status_code=400, detail=assignment_conflict)
 
     session.add(trip)
     session.commit()
