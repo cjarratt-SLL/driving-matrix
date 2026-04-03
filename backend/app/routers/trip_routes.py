@@ -14,6 +14,12 @@ from app.schemas.trip_schemas import TripCreate, TripRead, TripDetailRead, TripU
 
 router = APIRouter(prefix="/trips", tags=["Trips"])
 
+def trips_overlap(first_trip: Trip, second_trip: Trip) -> bool:
+    return (
+        first_trip.pickup_time < second_trip.dropoff_time
+        and second_trip.pickup_time < first_trip.dropoff_time
+    )
+
 class TripConflictItem(BaseModel):
     trip_id: int
     arrival_time: str
@@ -296,68 +302,82 @@ def get_schedule_conflicts(
         vehicle_name = vehicle.name if vehicle else None
 
         if trip.driver_id is not None:
-            driver_key = (trip.driver_id, trip.arrival_time)
-            if driver_key in driver_seen:
-                driver_conflicts.append(
-                    TripConflictItem(
-                        trip_id=trip.id,
-                        arrival_time=trip.arrival_time.isoformat(),
-                        resident_name=resident_name,
-                        driver_name=driver_name,
-                        vehicle_name=vehicle_name,
-                    )
-                )
-                first_trip = driver_seen[driver_key]
-                if all(item.trip_id != first_trip["trip_id"] for item in driver_conflicts):
-                    driver_conflicts.append(
-                        TripConflictItem(
-                            trip_id=first_trip["trip_id"],
-                            arrival_time=first_trip["arrival_time"],
-                            resident_name=first_trip["resident_name"],
-                            driver_name=first_trip["driver_name"],
-                            vehicle_name=first_trip["vehicle_name"],
+            if trip.driver_id not in driver_seen:
+                driver_seen[trip.driver_id] = []
+
+            for seen_trip in driver_seen[trip.driver_id]:
+                if trips_overlap(trip, seen_trip["trip"]):
+                    if all(item.trip_id != trip.id for item in driver_conflicts):
+                        driver_conflicts.append(
+                            TripConflictItem(
+                                trip_id=trip.id,
+                                arrival_time=trip.pickup_time.isoformat(),
+                                resident_name=resident_name,
+                                driver_name=driver_name,
+                                vehicle_name=vehicle_name,
+                            )
                         )
-                    )
-            else:
-                driver_seen[driver_key] = {
+
+                    if all(item.trip_id != seen_trip["trip_id"] for item in driver_conflicts):
+                        driver_conflicts.append(
+                            TripConflictItem(
+                                trip_id=seen_trip["trip_id"],
+                                arrival_time=seen_trip["arrival_time"],
+                                resident_name=seen_trip["resident_name"],
+                                driver_name=seen_trip["driver_name"],
+                                vehicle_name=seen_trip["vehicle_name"],
+                            )
+                        )
+
+            driver_seen[trip.driver_id].append(
+                {
+                    "trip": trip,
                     "trip_id": trip.id,
-                    "arrival_time": trip.arrival_time.isoformat(),
+                    "arrival_time": trip.pickup_time.isoformat(),
                     "resident_name": resident_name,
                     "driver_name": driver_name,
                     "vehicle_name": vehicle_name,
                 }
+            )
 
         if trip.vehicle_id is not None:
-            vehicle_key = (trip.vehicle_id, trip.pickup_time, trip.dropoff_time)
-            if vehicle_key in vehicle_seen:
-                vehicle_conflicts.append(
-                    TripConflictItem(
-                        trip_id=trip.id,
-                        arrival_time=trip.arrival_time.isoformat(),
-                        resident_name=resident_name,
-                        driver_name=driver_name,
-                        vehicle_name=vehicle_name,
-                    )
-                )
-                first_trip = vehicle_seen[vehicle_key]
-                if all(item.trip_id != first_trip["trip_id"] for item in vehicle_conflicts):
-                    vehicle_conflicts.append(
-                        TripConflictItem(
-                            trip_id=first_trip["trip_id"],
-                            arrival_time=first_trip["arrival_time"],
-                            resident_name=first_trip["resident_name"],
-                            driver_name=first_trip["driver_name"],
-                            vehicle_name=first_trip["vehicle_name"],
+            if trip.vehicle_id not in vehicle_seen:
+                vehicle_seen[trip.vehicle_id] = []
+
+            for seen_trip in vehicle_seen[trip.vehicle_id]:
+                if trips_overlap(trip, seen_trip["trip"]):
+                    if all(item.trip_id != trip.id for item in vehicle_conflicts):
+                        vehicle_conflicts.append(
+                            TripConflictItem(
+                                trip_id=trip.id,
+                                arrival_time=trip.pickup_time.isoformat(),
+                                resident_name=resident_name,
+                                driver_name=driver_name,
+                                vehicle_name=vehicle_name,
+                            )
                         )
-                    )
-            else:
-                vehicle_seen[vehicle_key] = {
+
+                    if all(item.trip_id != seen_trip["trip_id"] for item in vehicle_conflicts):
+                        vehicle_conflicts.append(
+                            TripConflictItem(
+                                trip_id=seen_trip["trip_id"],
+                                arrival_time=seen_trip["arrival_time"],
+                                resident_name=seen_trip["resident_name"],
+                                driver_name=seen_trip["driver_name"],
+                                vehicle_name=seen_trip["vehicle_name"],
+                            )
+                        )
+
+            vehicle_seen[trip.vehicle_id].append(
+                {
+                    "trip": trip,
                     "trip_id": trip.id,
-                    "arrival_time": trip.arrival_time.isoformat(),
+                    "arrival_time": trip.pickup_time.isoformat(),
                     "resident_name": resident_name,
                     "driver_name": driver_name,
                     "vehicle_name": vehicle_name,
                 }
+            )
 
     return DailyScheduleConflicts(
         driver_conflicts=driver_conflicts,
