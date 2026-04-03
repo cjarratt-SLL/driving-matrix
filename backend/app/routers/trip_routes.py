@@ -28,7 +28,7 @@ def find_assignment_conflict(
     vehicle_id: Optional[int],
     pickup_time,
     dropoff_time,
-) -> Optional[str]:
+) -> Optional[dict]:
     existing_trips = session.exec(select(Trip)).all()
 
     candidate_trip = Trip(
@@ -51,10 +51,48 @@ def find_assignment_conflict(
             continue
 
         if driver_id is not None and existing_trip.driver_id == driver_id:
-            return "Driver already has an overlapping trip"
+            driver = session.get(Driver, existing_trip.driver_id)
+            driver_name = (
+                f"{driver.first_name} {driver.last_name}"
+                if driver is not None
+                else f"Driver #{existing_trip.driver_id}"
+            )
+
+            return {
+                "resource_type": "driver",
+                "resource_id": existing_trip.driver_id,
+                "resource_name": driver_name,
+                "conflicting_trip_id": existing_trip.id,
+                "conflicting_pickup_time": existing_trip.pickup_time.isoformat(),
+                "conflicting_dropoff_time": existing_trip.dropoff_time.isoformat(),
+                "detail": (
+                    f"{driver_name} already has trip #{existing_trip.id} from "
+                    f"{existing_trip.pickup_time.isoformat()} to "
+                    f"{existing_trip.dropoff_time.isoformat()}"
+                ),
+            }
 
         if vehicle_id is not None and existing_trip.vehicle_id == vehicle_id:
-            return "Vehicle already has an overlapping trip"
+            vehicle = session.get(Vehicle, existing_trip.vehicle_id)
+            vehicle_name = (
+                vehicle.name
+                if vehicle is not None
+                else f"Vehicle #{existing_trip.vehicle_id}"
+            )
+
+            return {
+                "resource_type": "vehicle",
+                "resource_id": existing_trip.vehicle_id,
+                "resource_name": vehicle_name,
+                "conflicting_trip_id": existing_trip.id,
+                "conflicting_pickup_time": existing_trip.pickup_time.isoformat(),
+                "conflicting_dropoff_time": existing_trip.dropoff_time.isoformat(),
+                "detail": (
+                    f"{vehicle_name} already has trip #{existing_trip.id} from "
+                    f"{existing_trip.pickup_time.isoformat()} to "
+                    f"{existing_trip.dropoff_time.isoformat()}"
+                ),
+            }
 
     return None
 
