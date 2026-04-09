@@ -227,17 +227,24 @@ def create_trip(
     if assignment_conflict is not None:
             raise HTTPException(status_code=400, detail=assignment_conflict)
     
-    calculated_duration_minutes = calculate_duration_minutes(
-        trip.pickup_time, trip.dropoff_time
-)
-    
+    if trip.driver_id is None or trip.vehicle_id is None:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "driver_id": trip.driver_id,
+                "vehicle_id": trip.vehicle_id,
+                "message": "driver_id or vehicle_id became None before Trip creation",
+            },
+        )
     new_trip = Trip(
         resident_id=trip.resident_id,
         pickup_location_id=trip.pickup_location_id,
         dropoff_location_id=trip.dropoff_location_id,
         pickup_time=trip.pickup_time,
         dropoff_time=trip.dropoff_time,
-        estimated_duration_minutes=calculated_duration_minutes,
+        estimated_duration_minutes=calculate_duration_minutes(
+            trip.pickup_time, trip.dropoff_time
+        ),
         status="scheduled",
         driver_id=trip.driver_id,
         vehicle_id=trip.vehicle_id,
