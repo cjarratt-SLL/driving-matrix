@@ -269,9 +269,9 @@ def update_trip(
             status_code=400,
             detail="dropoff_time must be after pickup_time",
         )
-    calculated_duration_minutes = int(
-        (trip.dropoff_time - trip.pickup_time).total_seconds() / 60
-    )
+    
+    calculated_duration_minutes = calculate_duration_minutes(trip.pickup_time, trip.dropoff_time)
+
     trip.estimated_duration_minutes = calculated_duration_minutes
 
     assignment_conflict = find_assignment_conflict(
