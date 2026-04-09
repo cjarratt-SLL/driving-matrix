@@ -370,19 +370,14 @@ def list_trips_for_date(
     session: Session = Depends(get_session),
 ):
     trips = session.exec(select(Trip)).all()
-    trip_details = []
+    trip_details = [
+        trip_detail
+        for trip in trips
+        if trip.pickup_time.date() == trip_date
+        and (trip_detail := build_trip_detail_read(session, trip)) is not None
+    ]
 
-    for trip in trips:
-        if trip.pickup_time.date() != trip_date:
-            continue
-
-        trip_detail = build_trip_detail_read(session, trip)
-        if trip_detail is None:
-            continue
-
-        trip_details.append(trip_detail)
-
-    return sorted(trip_details, key=lambda t: t.pickup_time)
+    return sort_trip_details_by_pickup(trip_details)
 
 @router.get("/schedule/conflicts", response_model=DailyScheduleConflicts)
 def get_schedule_conflicts(
