@@ -174,7 +174,6 @@ def create_trip(
         dropoff_location_id=trip.dropoff_location_id,
         pickup_time=trip.pickup_time,
         dropoff_time=trip.dropoff_time,
-        duration_minutes=int((trip.dropoff_time - trip.pickup_time).total_seconds() / 60),
         estimated_duration_minutes=trip.estimated_duration_minutes,
         status="scheduled",
         driver_id=trip.driver_id,
