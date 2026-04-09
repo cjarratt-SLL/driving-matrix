@@ -174,6 +174,7 @@ def create_trip(
         dropoff_location_id=trip.dropoff_location_id,
         pickup_time=trip.pickup_time,
         dropoff_time=trip.dropoff_time,
+        duration_minutes=int((trip.dropoff_time - trip.pickup_time).total_seconds() / 60),
         estimated_duration_minutes=trip.estimated_duration_minutes,
         status="scheduled",
         driver_id=trip.driver_id,
@@ -310,7 +311,7 @@ def list_trip_details(session: Session = Depends(get_session)):
         if resident is None or pickup_location is None or dropoff_location is None:
             continue
 
-    trip_details.append(
+        trip_details.append(
         TripDetailRead(
             id=trip.id,
             resident_id=trip.resident_id,
@@ -321,6 +322,7 @@ def list_trip_details(session: Session = Depends(get_session)):
             dropoff_location_name=dropoff_location.name,
             pickup_time=trip.pickup_time,
             dropoff_time=trip.dropoff_time,
+            duration_minutes=int((trip.dropoff_time - trip.pickup_time).total_seconds() / 60),
             estimated_duration_minutes=trip.estimated_duration_minutes,
             status=trip.status,
             driver_id=trip.driver_id,
@@ -364,6 +366,7 @@ def list_trips_for_date(
                 dropoff_location_name=dropoff_location.name,
                 pickup_time=trip.pickup_time,
                 dropoff_time=trip.dropoff_time,
+                duration_minutes=int((trip.dropoff_time - trip.pickup_time).total_seconds() / 60),
                 estimated_duration_minutes=trip.estimated_duration_minutes,
                 status=trip.status,
                 driver_id=trip.driver_id,
@@ -521,6 +524,7 @@ def list_trips_grouped_by_driver(
             dropoff_location_name=dropoff_location.name,
             pickup_time=trip.pickup_time,
             dropoff_time=trip.dropoff_time,
+            duration_minutes=int((trip.dropoff_time - trip.pickup_time).total_seconds() / 60),
             estimated_duration_minutes=trip.estimated_duration_minutes,
             status=trip.status,
             driver_id=trip.driver_id,
@@ -594,6 +598,7 @@ def list_trips_grouped_by_vehicle(
             dropoff_location_name=dropoff_location.name,
             pickup_time=trip.pickup_time,
             dropoff_time=trip.dropoff_time,
+            duration_minutes=int((trip.dropoff_time - trip.pickup_time).total_seconds() / 60),
             estimated_duration_minutes=trip.estimated_duration_minutes,
             status=trip.status,
             driver_id=trip.driver_id,

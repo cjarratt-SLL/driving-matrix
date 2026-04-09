@@ -40,6 +40,7 @@ class TripDetailRead(BaseModel):
     dropoff_location_name: str
     pickup_time: datetime
     dropoff_time: datetime
+    duration_minutes: int
     estimated_duration_minutes: int = 30
     status: str = "scheduled"
     driver_id: Optional[int] = None
