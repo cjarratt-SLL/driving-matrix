@@ -20,6 +20,9 @@ def trips_overlap(first_trip: Trip, second_trip: Trip) -> bool:
         and second_trip.pickup_time < first_trip.dropoff_time
     )
 
+def calculate_duration_minutes(pickup_time, dropoff_time) -> int:
+    return int((dropoff_time - pickup_time).total_seconds() / 60)
+
 def find_assignment_conflict(
     *,
     session: Session,
@@ -168,8 +171,9 @@ def create_trip(
     if assignment_conflict is not None:
             raise HTTPException(status_code=400, detail=assignment_conflict)
     
-    calculated_duration_minutes = int(
-        (trip.dropoff_time - trip.pickup_time).total_seconds() / 60)
+    calculated_duration_minutes = calculate_duration_minutes(
+        trip.pickup_time, trip.dropoff_time
+)
     
     new_trip = Trip(
         resident_id=trip.resident_id,
@@ -319,7 +323,9 @@ def list_trip_details(session: Session = Depends(get_session)):
             dropoff_location_name=dropoff_location.name,
             pickup_time=trip.pickup_time,
             dropoff_time=trip.dropoff_time,
-            duration_minutes=int((trip.dropoff_time - trip.pickup_time).total_seconds() / 60),
+            duration_minutes=calculate_duration_minutes(
+                trip.pickup_time, trip.dropoff_time
+            ),
             estimated_duration_minutes=trip.estimated_duration_minutes,
             status=trip.status,
             driver_id=trip.driver_id,
@@ -363,7 +369,9 @@ def list_trips_for_date(
                 dropoff_location_name=dropoff_location.name,
                 pickup_time=trip.pickup_time,
                 dropoff_time=trip.dropoff_time,
-                duration_minutes=int((trip.dropoff_time - trip.pickup_time).total_seconds() / 60),
+                duration_minutes=calculate_duration_minutes(
+                    trip.pickup_time, trip.dropoff_time
+                ),
                 estimated_duration_minutes=trip.estimated_duration_minutes,
                 status=trip.status,
                 driver_id=trip.driver_id,
@@ -521,7 +529,9 @@ def list_trips_grouped_by_driver(
             dropoff_location_name=dropoff_location.name,
             pickup_time=trip.pickup_time,
             dropoff_time=trip.dropoff_time,
-            duration_minutes=int((trip.dropoff_time - trip.pickup_time).total_seconds() / 60),
+            duration_minutes=calculate_duration_minutes(
+                trip.pickup_time, trip.dropoff_time
+            ),
             estimated_duration_minutes=trip.estimated_duration_minutes,
             status=trip.status,
             driver_id=trip.driver_id,
@@ -595,7 +605,9 @@ def list_trips_grouped_by_vehicle(
             dropoff_location_name=dropoff_location.name,
             pickup_time=trip.pickup_time,
             dropoff_time=trip.dropoff_time,
-            duration_minutes=int((trip.dropoff_time - trip.pickup_time).total_seconds() / 60),
+            duration_minutes=calculate_duration_minutes(
+                trip.pickup_time, trip.dropoff_time
+            ),
             estimated_duration_minutes=trip.estimated_duration_minutes,
             status=trip.status,
             driver_id=trip.driver_id,
