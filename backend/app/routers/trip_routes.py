@@ -42,6 +42,40 @@ def build_trip_read(session: Session, trip: Trip) -> TripRead:
         vehicle_name=vehicle.name if vehicle else None,
     )
 
+def build_trip_detail_read(
+    session: Session,
+    trip: Trip,
+) -> Optional[TripDetailRead]:
+    resident = session.get(Resident, trip.resident_id)
+    pickup_location = session.get(Location, trip.pickup_location_id)
+    dropoff_location = session.get(Location, trip.dropoff_location_id)
+    driver = session.get(Driver, trip.driver_id) if trip.driver_id is not None else None
+    vehicle = session.get(Vehicle, trip.vehicle_id) if trip.vehicle_id is not None else None
+
+    if resident is None or pickup_location is None or dropoff_location is None:
+        return None
+
+    return TripDetailRead(
+        id=trip.id,
+        resident_id=trip.resident_id,
+        resident_name=f"{resident.first_name} {resident.last_name}",
+        pickup_location_id=trip.pickup_location_id,
+        pickup_location_name=pickup_location.name,
+        dropoff_location_id=trip.dropoff_location_id,
+        dropoff_location_name=dropoff_location.name,
+        pickup_time=trip.pickup_time,
+        dropoff_time=trip.dropoff_time,
+        duration_minutes=calculate_duration_minutes(
+            trip.pickup_time, trip.dropoff_time
+        ),
+        estimated_duration_minutes=trip.estimated_duration_minutes,
+        status=trip.status,
+        driver_id=trip.driver_id,
+        driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
+        vehicle_id=trip.vehicle_id,
+        vehicle_name=vehicle.name if vehicle else None,
+    )
+
 def find_assignment_conflict(
     *,
     session: Session,
@@ -322,37 +356,11 @@ def list_trip_details(session: Session = Depends(get_session)):
     trip_details = []
 
     for trip in trips:
-        resident = session.get(Resident, trip.resident_id)
-        pickup_location = session.get(Location, trip.pickup_location_id)
-        dropoff_location = session.get(Location, trip.dropoff_location_id)
-        driver = session.get(Driver, trip.driver_id) if trip.driver_id is not None else None
-        vehicle = session.get(Vehicle, trip.vehicle_id) if trip.vehicle_id is not None else None
-
-        if resident is None or pickup_location is None or dropoff_location is None:
+        trip_detail = build_trip_detail_read(session, trip)
+        if trip_detail is None:
             continue
 
-        trip_details.append(
-        TripDetailRead(
-            id=trip.id,
-            resident_id=trip.resident_id,
-            resident_name=f"{resident.first_name} {resident.last_name}",
-            pickup_location_id=trip.pickup_location_id,
-            pickup_location_name=pickup_location.name,
-            dropoff_location_id=trip.dropoff_location_id,
-            dropoff_location_name=dropoff_location.name,
-            pickup_time=trip.pickup_time,
-            dropoff_time=trip.dropoff_time,
-            duration_minutes=calculate_duration_minutes(
-                trip.pickup_time, trip.dropoff_time
-            ),
-            estimated_duration_minutes=trip.estimated_duration_minutes,
-            status=trip.status,
-            driver_id=trip.driver_id,
-            driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
-            vehicle_id=trip.vehicle_id,
-            vehicle_name=vehicle.name if vehicle else None,
-        )
-    )
+        trip_details.append(trip_detail)
 
     return trip_details
 
@@ -368,37 +376,11 @@ def list_trips_for_date(
         if trip.pickup_time.date() != trip_date:
             continue
 
-        resident = session.get(Resident, trip.resident_id)
-        pickup_location = session.get(Location, trip.pickup_location_id)
-        dropoff_location = session.get(Location, trip.dropoff_location_id)
-        driver = session.get(Driver, trip.driver_id) if trip.driver_id is not None else None
-        vehicle = session.get(Vehicle, trip.vehicle_id) if trip.vehicle_id is not None else None
-
-        if resident is None or pickup_location is None or dropoff_location is None:
+        trip_detail = build_trip_detail_read(session, trip)
+        if trip_detail is None:
             continue
 
-        trip_details.append(
-            TripDetailRead(
-                id=trip.id,
-                resident_id=trip.resident_id,
-                resident_name=f"{resident.first_name} {resident.last_name}",
-                pickup_location_id=trip.pickup_location_id,
-                pickup_location_name=pickup_location.name,
-                dropoff_location_id=trip.dropoff_location_id,
-                dropoff_location_name=dropoff_location.name,
-                pickup_time=trip.pickup_time,
-                dropoff_time=trip.dropoff_time,
-                duration_minutes=calculate_duration_minutes(
-                    trip.pickup_time, trip.dropoff_time
-                ),
-                estimated_duration_minutes=trip.estimated_duration_minutes,
-                status=trip.status,
-                driver_id=trip.driver_id,
-                driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
-                vehicle_id=trip.vehicle_id,
-                vehicle_name=vehicle.name if vehicle else None,
-            )
-        )
+        trip_details.append(trip_detail)
 
     return sorted(trip_details, key=lambda t: t.pickup_time)
 
@@ -522,14 +504,7 @@ def list_trips_grouped_by_driver(
         if trip.pickup_time.date() != trip_date:
             continue
 
-        resident = session.get(Resident, trip.resident_id)
-        pickup_location = session.get(Location, trip.pickup_location_id)
-        dropoff_location = session.get(Location, trip.dropoff_location_id)
         driver = session.get(Driver, trip.driver_id) if trip.driver_id is not None else None
-        vehicle = session.get(Vehicle, trip.vehicle_id) if trip.vehicle_id is not None else None
-
-        if resident is None or pickup_location is None or dropoff_location is None:
-            continue
 
         if driver is not None:
             group_key = driver.id
@@ -538,26 +513,9 @@ def list_trips_grouped_by_driver(
             group_key = None
             group_name = "Unassigned"
 
-        trip_detail = TripDetailRead(
-            id=trip.id,
-            resident_id=trip.resident_id,
-            resident_name=f"{resident.first_name} {resident.last_name}",
-            pickup_location_id=trip.pickup_location_id,
-            pickup_location_name=pickup_location.name,
-            dropoff_location_id=trip.dropoff_location_id,
-            dropoff_location_name=dropoff_location.name,
-            pickup_time=trip.pickup_time,
-            dropoff_time=trip.dropoff_time,
-            duration_minutes=calculate_duration_minutes(
-                trip.pickup_time, trip.dropoff_time
-            ),
-            estimated_duration_minutes=trip.estimated_duration_minutes,
-            status=trip.status,
-            driver_id=trip.driver_id,
-            driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
-            vehicle_id=trip.vehicle_id,
-            vehicle_name=vehicle.name if vehicle else None,
-        )
+        trip_detail = build_trip_detail_read(session, trip)
+        if trip_detail is None:
+            continue
 
         if group_key not in grouped:
             grouped[group_key] = {
@@ -598,14 +556,7 @@ def list_trips_grouped_by_vehicle(
         if trip.pickup_time.date() != trip_date:
             continue
 
-        resident = session.get(Resident, trip.resident_id)
-        pickup_location = session.get(Location, trip.pickup_location_id)
-        dropoff_location = session.get(Location, trip.dropoff_location_id)
-        driver = session.get(Driver, trip.driver_id) if trip.driver_id is not None else None
         vehicle = session.get(Vehicle, trip.vehicle_id) if trip.vehicle_id is not None else None
-
-        if resident is None or pickup_location is None or dropoff_location is None:
-            continue
 
         if vehicle is not None:
             group_key = vehicle.id
@@ -614,26 +565,9 @@ def list_trips_grouped_by_vehicle(
             group_key = None
             group_name = "Unassigned"
 
-        trip_detail = TripDetailRead(
-            id=trip.id,
-            resident_id=trip.resident_id,
-            resident_name=f"{resident.first_name} {resident.last_name}",
-            pickup_location_id=trip.pickup_location_id,
-            pickup_location_name=pickup_location.name,
-            dropoff_location_id=trip.dropoff_location_id,
-            dropoff_location_name=dropoff_location.name,
-            pickup_time=trip.pickup_time,
-            dropoff_time=trip.dropoff_time,
-            duration_minutes=calculate_duration_minutes(
-                trip.pickup_time, trip.dropoff_time
-            ),
-            estimated_duration_minutes=trip.estimated_duration_minutes,
-            status=trip.status,
-            driver_id=trip.driver_id,
-            driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
-            vehicle_id=trip.vehicle_id,
-            vehicle_name=vehicle.name if vehicle else None,
-        )
+        trip_detail = build_trip_detail_read(session, trip)
+        if trip_detail is None:
+            continue
 
         if group_key not in grouped:
             grouped[group_key] = {
