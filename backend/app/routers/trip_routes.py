@@ -305,7 +305,23 @@ def update_trip(
     session.add(trip)
     session.commit()
     session.refresh(trip)
-    return trip
+    driver = session.get(Driver, trip.driver_id) if trip.driver_id is not None else None
+    vehicle = session.get(Vehicle, trip.vehicle_id) if trip.vehicle_id is not None else None
+
+    return TripRead(
+        id=trip.id,
+        resident_id=trip.resident_id,
+        pickup_location_id=trip.pickup_location_id,
+        dropoff_location_id=trip.dropoff_location_id,
+        pickup_time=trip.pickup_time,
+        dropoff_time=trip.dropoff_time,
+        estimated_duration_minutes=trip.estimated_duration_minutes,
+        status=trip.status,
+        driver_id=trip.driver_id,
+        driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
+        vehicle_id=trip.vehicle_id,
+        vehicle_name=vehicle.name if vehicle else None,
+    )
 
 @router.get("", response_model=list[TripRead])
 def list_trips(session: Session = Depends(get_session)):
