@@ -189,7 +189,23 @@ def create_trip(
     session.add(new_trip)
     session.commit()
     session.refresh(new_trip)
-    return new_trip
+    driver = session.get(Driver, new_trip.driver_id) if new_trip.driver_id is not None else None
+    vehicle = session.get(Vehicle, new_trip.vehicle_id) if new_trip.vehicle_id is not None else None
+
+    return TripRead(
+        id=new_trip.id,
+        resident_id=new_trip.resident_id,
+        pickup_location_id=new_trip.pickup_location_id,
+        dropoff_location_id=new_trip.dropoff_location_id,
+        pickup_time=new_trip.pickup_time,
+        dropoff_time=new_trip.dropoff_time,
+        estimated_duration_minutes=new_trip.estimated_duration_minutes,
+        status=new_trip.status,
+        driver_id=new_trip.driver_id,
+        driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
+        vehicle_id=new_trip.vehicle_id,
+        vehicle_name=vehicle.name if vehicle else None,
+    )
 
 @router.patch("/{trip_id}", response_model=TripRead)
 def update_trip(
