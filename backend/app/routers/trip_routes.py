@@ -168,13 +168,16 @@ def create_trip(
     if assignment_conflict is not None:
             raise HTTPException(status_code=400, detail=assignment_conflict)
     
+    calculated_duration_minutes = int(
+        (trip.dropoff_time - trip.pickup_time).total_seconds() / 60)
+    
     new_trip = Trip(
         resident_id=trip.resident_id,
         pickup_location_id=trip.pickup_location_id,
         dropoff_location_id=trip.dropoff_location_id,
         pickup_time=trip.pickup_time,
         dropoff_time=trip.dropoff_time,
-        estimated_duration_minutes=trip.estimated_duration_minutes,
+        estimated_duration_minutes=calculated_duration_minutes,
         status="scheduled",
         driver_id=trip.driver_id,
         vehicle_id=trip.vehicle_id,
