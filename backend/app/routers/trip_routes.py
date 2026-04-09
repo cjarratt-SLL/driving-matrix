@@ -254,15 +254,6 @@ def update_trip(
             raise HTTPException(status_code=400, detail="dropoff_time cannot be null")
         trip.dropoff_time = dropoff_time
 
-    if "estimated_duration_minutes" in update_data:
-        estimated_duration_minutes = update_data["estimated_duration_minutes"]
-        if estimated_duration_minutes is None:
-            raise HTTPException(
-                status_code=400,
-                detail="estimated_duration_minutes cannot be null",
-            )
-        trip.estimated_duration_minutes = estimated_duration_minutes
-
     if "status" in update_data:
         status = update_data["status"]
         if status is None:
@@ -274,6 +265,10 @@ def update_trip(
             status_code=400,
             detail="dropoff_time must be after pickup_time",
         )
+    calculated_duration_minutes = int(
+        (trip.dropoff_time - trip.pickup_time).total_seconds() / 60
+    )
+    trip.estimated_duration_minutes = calculated_duration_minutes
 
     assignment_conflict = find_assignment_conflict(
         session=session,
