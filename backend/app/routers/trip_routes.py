@@ -356,14 +356,11 @@ def list_trips(session: Session = Depends(get_session)):
 @router.get("/details", response_model=list[TripDetailRead])
 def list_trip_details(session: Session = Depends(get_session)):
     trips = session.exec(select(Trip)).all()
-    trip_details = []
-
-    for trip in trips:
-        trip_detail = build_trip_detail_read(session, trip)
-        if trip_detail is None:
-            continue
-
-        trip_details.append(trip_detail)
+    trip_details = [
+        trip_detail
+        for trip in trips
+        if (trip_detail := build_trip_detail_read(session, trip)) is not None
+    ]
 
     return trip_details
 
