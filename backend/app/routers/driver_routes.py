@@ -3,13 +3,14 @@ from sqlmodel import Session, select
 
 from app.db import get_session
 from app.models.driver_models import Driver
+from app.schemas.driver_schemas import DriverCreate, DriverRead
 
 router = APIRouter(prefix="/drivers", tags=["Drivers"])
 
 
-@router.post("", response_model=Driver)
+@router.post("", response_model=DriverRead)
 def create_driver(
-    driver: Driver,
+    driver: DriverCreate,
     session: Session = Depends(get_session),
 ):
     new_driver = Driver(
@@ -26,7 +27,7 @@ def create_driver(
     return new_driver
 
 
-@router.get("", response_model=list[Driver])
+@router.get("", response_model=list[DriverRead])
 def list_drivers(session: Session = Depends(get_session)):
     drivers = session.exec(select(Driver)).all()
     return drivers
