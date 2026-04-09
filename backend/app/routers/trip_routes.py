@@ -23,6 +23,25 @@ def trips_overlap(first_trip: Trip, second_trip: Trip) -> bool:
 def calculate_duration_minutes(pickup_time, dropoff_time) -> int:
     return int((dropoff_time - pickup_time).total_seconds() / 60)
 
+def build_trip_read(session: Session, trip: Trip) -> TripRead:
+    driver = session.get(Driver, trip.driver_id) if trip.driver_id is not None else None
+    vehicle = session.get(Vehicle, trip.vehicle_id) if trip.vehicle_id is not None else None
+
+    return TripRead(
+        id=trip.id,
+        resident_id=trip.resident_id,
+        pickup_location_id=trip.pickup_location_id,
+        dropoff_location_id=trip.dropoff_location_id,
+        pickup_time=trip.pickup_time,
+        dropoff_time=trip.dropoff_time,
+        estimated_duration_minutes=trip.estimated_duration_minutes,
+        status=trip.status,
+        driver_id=trip.driver_id,
+        driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
+        vehicle_id=trip.vehicle_id,
+        vehicle_name=vehicle.name if vehicle else None,
+    )
+
 def find_assignment_conflict(
     *,
     session: Session,
@@ -189,23 +208,7 @@ def create_trip(
     session.add(new_trip)
     session.commit()
     session.refresh(new_trip)
-    driver = session.get(Driver, new_trip.driver_id) if new_trip.driver_id is not None else None
-    vehicle = session.get(Vehicle, new_trip.vehicle_id) if new_trip.vehicle_id is not None else None
-
-    return TripRead(
-        id=new_trip.id,
-        resident_id=new_trip.resident_id,
-        pickup_location_id=new_trip.pickup_location_id,
-        dropoff_location_id=new_trip.dropoff_location_id,
-        pickup_time=new_trip.pickup_time,
-        dropoff_time=new_trip.dropoff_time,
-        estimated_duration_minutes=new_trip.estimated_duration_minutes,
-        status=new_trip.status,
-        driver_id=new_trip.driver_id,
-        driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
-        vehicle_id=new_trip.vehicle_id,
-        vehicle_name=vehicle.name if vehicle else None,
-    )
+    return build_trip_read(session, new_trip)
 
 @router.patch("/{trip_id}", response_model=TripRead)
 def update_trip(
@@ -305,51 +308,12 @@ def update_trip(
     session.add(trip)
     session.commit()
     session.refresh(trip)
-    driver = session.get(Driver, trip.driver_id) if trip.driver_id is not None else None
-    vehicle = session.get(Vehicle, trip.vehicle_id) if trip.vehicle_id is not None else None
-
-    return TripRead(
-        id=trip.id,
-        resident_id=trip.resident_id,
-        pickup_location_id=trip.pickup_location_id,
-        dropoff_location_id=trip.dropoff_location_id,
-        pickup_time=trip.pickup_time,
-        dropoff_time=trip.dropoff_time,
-        estimated_duration_minutes=trip.estimated_duration_minutes,
-        status=trip.status,
-        driver_id=trip.driver_id,
-        driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
-        vehicle_id=trip.vehicle_id,
-        vehicle_name=vehicle.name if vehicle else None,
-    )
+    return build_trip_read(session, trip)
 
 @router.get("", response_model=list[TripRead])
 def list_trips(session: Session = Depends(get_session)):
     trips = session.exec(select(Trip)).all()
-    trip_reads = []
-
-    for trip in trips:
-        driver = session.get(Driver, trip.driver_id) if trip.driver_id is not None else None
-        vehicle = session.get(Vehicle, trip.vehicle_id) if trip.vehicle_id is not None else None
-
-        trip_reads.append(
-            TripRead(
-                id=trip.id,
-                resident_id=trip.resident_id,
-                pickup_location_id=trip.pickup_location_id,
-                dropoff_location_id=trip.dropoff_location_id,
-                pickup_time=trip.pickup_time,
-                dropoff_time=trip.dropoff_time,
-                estimated_duration_minutes=trip.estimated_duration_minutes,
-                status=trip.status,
-                driver_id=trip.driver_id,
-                driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
-                vehicle_id=trip.vehicle_id,
-                vehicle_name=vehicle.name if vehicle else None,
-            )
-        )
-
-    return trip_reads
+    return [build_trip_read(session, trip) for trip in trips]
 
 
 @router.get("/details", response_model=list[TripDetailRead])
