@@ -227,15 +227,6 @@ def create_trip(
     if assignment_conflict is not None:
             raise HTTPException(status_code=400, detail=assignment_conflict)
     
-    if trip.driver_id is None or trip.vehicle_id is None:
-        raise HTTPException(
-            status_code=400,
-            detail={
-                "driver_id": trip.driver_id,
-                "vehicle_id": trip.vehicle_id,
-                "message": "driver_id or vehicle_id became None before Trip creation",
-            },
-        )
     new_trip = Trip(
         resident_id=trip.resident_id,
         pickup_location_id=trip.pickup_location_id,
