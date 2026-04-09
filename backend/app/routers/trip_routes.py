@@ -326,9 +326,9 @@ def update_trip(
             detail="dropoff_time must be after pickup_time",
         )
     
-    calculated_duration_minutes = calculate_duration_minutes(trip.pickup_time, trip.dropoff_time)
-
-    trip.estimated_duration_minutes = calculated_duration_minutes
+    trip.estimated_duration_minutes = calculate_duration_minutes(
+        trip.pickup_time, trip.dropoff_time
+    )
 
     assignment_conflict = find_assignment_conflict(
         session=session,
