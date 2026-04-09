@@ -76,6 +76,9 @@ def build_trip_detail_read(
         vehicle_name=vehicle.name if vehicle else None,
     )
 
+def sort_trip_details_by_pickup(trips: list[TripDetailRead]) -> list[TripDetailRead]:
+    return sorted(trips, key=lambda t: t.pickup_time)
+
 def find_assignment_conflict(
     *,
     session: Session,
@@ -528,7 +531,7 @@ def list_trips_grouped_by_driver(
 
     groups = []
     for group in grouped.values():
-        sorted_trips = sorted(group["trips"], key=lambda t: t.pickup_time)
+        sorted_trips = sort_trip_details_by_pickup(group["trips"])
         groups.append(
             DriverScheduleGroup(
                 driver_id=group["driver_id"],
@@ -580,7 +583,7 @@ def list_trips_grouped_by_vehicle(
 
     groups = []
     for group in grouped.values():
-        sorted_trips = sorted(group["trips"], key=lambda t: t.pickup_time)
+        sorted_trips = sort_trip_details_by_pickup(group["trips"])
         groups.append(
             VehicleScheduleGroup(
                 vehicle_id=group["vehicle_id"],
