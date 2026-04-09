@@ -10,7 +10,6 @@ class TripCreate(BaseModel):
     dropoff_location_id: int
     pickup_time: datetime
     dropoff_time: datetime
-    estimated_duration_minutes: int = 30
     driver_id: Optional[int] = None
     vehicle_id: Optional[int] = None
 
@@ -55,7 +54,6 @@ class TripUpdate(BaseModel):
     dropoff_location_id: Optional[int] = None
     pickup_time: Optional[datetime] = None
     dropoff_time: Optional[datetime] = None
-    estimated_duration_minutes: Optional[int] = None
     status: Optional[str] = None
     driver_id: Optional[int] = None
     vehicle_id: Optional[int] = None
