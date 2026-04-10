@@ -515,9 +515,12 @@ def list_trips_grouped_by_driver(
                 "driver_id": group_key,
                 "driver_name": group_name,
                 "trips": [],
+                "trip_ids": set(),
             }
 
-        grouped[group_key]["trips"].append(trip_detail)
+        if trip_detail.id not in grouped[group_key]["trip_ids"]:
+            grouped[group_key]["trips"].append(trip_detail)
+            grouped[group_key]["trip_ids"].add(trip_detail.id)
 
     groups = []
     for group in grouped.values():
