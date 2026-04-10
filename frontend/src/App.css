@@ -101,6 +101,21 @@
   gap: 0.6rem;
 }
 
+.trip-row-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+
+.entry-form fieldset {
+  border: 0;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 0.6rem;
+}
+
+
 .entry-form label {
   display: grid;
   gap: 0.25rem;

@@ -2,6 +2,21 @@ import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
+const API_USER_ROLE = import.meta.env.VITE_USER_ROLE?.toLowerCase();
+const API_USER_ID = import.meta.env.VITE_USER_ID || "frontend-user";
+
+function buildAuthHeaders(extraHeaders = {}) {
+  const headers = {
+    ...extraHeaders,
+    "x-user-id": API_USER_ID,
+  };
+
+  if (API_USER_ROLE) {
+    headers["x-user-role"] = API_USER_ROLE;
+  }
+
+  return headers;
+}
 
 const resourceConfig = {
   residents: {
@@ -191,7 +206,7 @@ function ResourcePanel({ config, records, loading, error, onRefresh, onCreate })
   );
 }
 
-function TripPanel({ dataSources }) {
+function TripPanel({ dataSources, canMutateTrips }) {
   const [trips, setTrips] = useState([]);
   const [tripError, setTripError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -210,7 +225,9 @@ function TripPanel({ dataSources }) {
     setLoading(true);
     setTripError("");
     try {
-      const response = await fetch(`${API_BASE_URL}/trips`);
+      const response = await fetch(`${API_BASE_URL}/trips`, {
+        headers: buildAuthHeaders(),
+      });
       if (!response.ok) {
         throw new Error(`Unable to load trips (${response.status})`);
       }
@@ -238,6 +255,11 @@ function TripPanel({ dataSources }) {
 
   const createTrip = async (event) => {
     event.preventDefault();
+    if (!canMutateTrips) {
+      setTripError("You have read-only access for trip updates.");
+      return;
+    }
+
     setSaving(true);
     setTripError("");
     try {
@@ -253,7 +275,7 @@ function TripPanel({ dataSources }) {
 
       const response = await fetch(`${API_BASE_URL}/trips`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: buildAuthHeaders({ "Content-Type": "application/json" }),
         body: JSON.stringify(payload),
       });
 
@@ -279,6 +301,31 @@ function TripPanel({ dataSources }) {
     }
   };
 
+  const recalculateTripEstimate = async (tripId) => {
+    if (!canMutateTrips) {
+      setTripError("You have read-only access for estimate recalculation.");
+      return;
+    }
+
+    setTripError("");
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/trips/${tripId}/reestimate`, {
+        method: "POST",
+        headers: buildAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        const details = await response.json().catch(() => ({}));
+        throw new Error(details.detail || `Unable to re-estimate trip (${response.status})`);
+      }
+
+      await loadTrips();
+    } catch (error) {
+      setTripError(error.message || "Unable to re-estimate trip");
+    }
+  };
+
   return (
     <section className="panel trip-panel">
       <header className="panel-header">
@@ -289,6 +336,7 @@ function TripPanel({ dataSources }) {
       </header>
 
       {tripError ? <p className="error-text">{tripError}</p> : null}
+      {!canMutateTrips ? <p className="status-pill">Read-only: trip mutations disabled for this role.</p> : null}
 
       <ul className="record-list">
         {trips.length === 0 ? <li className="empty-row">No trips yet.</li> : null}
@@ -298,12 +346,23 @@ function TripPanel({ dataSources }) {
               Resident #{trip.resident_id} · {new Date(trip.pickup_time).toLocaleString()} →{" "}
               {new Date(trip.dropoff_time).toLocaleString()}
             </span>
-            <code>#{trip.id}</code>
+            <div className="trip-row-actions">
+              <button
+                type="button"
+                onClick={() => recalculateTripEstimate(trip.id)}
+                disabled={!canMutateTrips}
+                title={canMutateTrips ? "Recalculate estimate" : "Read-only role"}
+              >
+                Re-estimate
+              </button>
+              <code>#{trip.id}</code>
+            </div>
           </li>
         ))}
       </ul>
 
       <form className="entry-form" onSubmit={createTrip}>
+        <fieldset disabled={!canMutateTrips}>
         <label>
           <span>Resident</span>
           <select
@@ -406,9 +465,10 @@ function TripPanel({ dataSources }) {
           </select>
         </label>
 
-        <button type="submit" disabled={saving}>
+        <button type="submit" disabled={saving || !canMutateTrips}>
           {saving ? "Saving..." : "Create Trip"}
         </button>
+        </fieldset>
       </form>
     </section>
   );
@@ -424,10 +484,18 @@ function App() {
   });
   const [errors, setErrors] = useState({});
   const [loadingStates, setLoadingStates] = useState({});
+  const [authPolicy, setAuthPolicy] = useState({
+    default_role: "viewer",
+    trip_mutation_roles: [],
+  });
+  const activeUserRole = API_USER_ROLE || authPolicy.default_role;
+  const canMutateTrips = authPolicy.trip_mutation_roles.includes(activeUserRole);
 
   const checkHealth = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/health`);
+      const response = await fetch(`${API_BASE_URL}/health`, {
+        headers: buildAuthHeaders(),
+      });
       if (!response.ok) {
         throw new Error(`HTTP ${response.status}`);
       }
@@ -435,6 +503,23 @@ function App() {
       setApiStatus(`Backend status: ${payload.status} (${API_BASE_URL})`);
     } catch (error) {
       setApiStatus(`Backend connection failed: ${error.message || String(error)}`);
+    }
+  };
+
+  const fetchAuthPolicy = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/policy`, {
+        headers: buildAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Unable to load auth policy (${response.status})`);
+      }
+
+      const payload = await response.json();
+      setAuthPolicy(payload);
+    } catch {
+      setApiStatus((current) => `${current} · Auth policy fallback active`);
     }
   };
 
@@ -448,7 +533,9 @@ function App() {
     setErrors((current) => ({ ...current, [key]: "" }));
 
     try {
-      const response = await fetch(`${API_BASE_URL}${config.endpoint}`);
+      const response = await fetch(`${API_BASE_URL}${config.endpoint}`, {
+        headers: buildAuthHeaders(),
+      });
       if (!response.ok) {
         throw new Error(`Unable to load ${config.label.toLowerCase()} (${response.status})`);
       }
@@ -480,6 +567,7 @@ function App() {
 
   useEffect(() => {
     checkHealth();
+    fetchAuthPolicy();
     Object.keys(resourceConfig).forEach((key) => {
       fetchResource(key);
     });
@@ -491,6 +579,7 @@ function App() {
         <h1>Driving Matrix</h1>
         <p>Frontend connector basics for core entities and trip creation.</p>
         <p className="status-pill">{apiStatus}</p>
+        <p className="status-pill">Role: {activeUserRole}</p>
       </header>
 
       <section className="grid-layout">
@@ -505,7 +594,7 @@ function App() {
             onCreate={(payload) => createResource(key, payload)}
           />
         ))}
-        <TripPanel dataSources={data} />
+        <TripPanel dataSources={data} canMutateTrips={canMutateTrips} />
       </section>
     </main>
   );
