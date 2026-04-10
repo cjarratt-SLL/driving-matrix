@@ -1,7 +1,7 @@
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
-from tests.fixtures import build_seed_records
+from .fixtures import build_seed_records
 
 
 @pytest.fixture
