@@ -33,10 +33,10 @@ def estimate_route(
     """
     del departure_time  # reserved for future provider logic
 
-    pickup_latitude = getattr(pickup_location, "latitude", None)
-    pickup_longitude = getattr(pickup_location, "longitude", None)
-    dropoff_latitude = getattr(dropoff_location, "latitude", None)
-    dropoff_longitude = getattr(dropoff_location, "longitude", None)
+    pickup_latitude = read_coordinate(pickup_location, "latitude")
+    pickup_longitude = read_coordinate(pickup_location, "longitude")
+    dropoff_latitude = read_coordinate(dropoff_location, "latitude")
+    dropoff_longitude = read_coordinate(dropoff_location, "longitude")
 
     if (
         pickup_latitude is None
@@ -64,6 +64,20 @@ def estimate_route(
         distance_meters=routed_distance_meters,
         duration_seconds=duration_seconds,
     )
+
+
+def read_coordinate(location, coordinate_name: str) -> Optional[float]:
+    if not hasattr(location, coordinate_name):
+        location_type = type(location).__name__
+        raise AttributeError(
+            f"{location_type} is missing '{coordinate_name}' required for routing estimates"
+        )
+
+    coordinate = getattr(location, coordinate_name)
+    if coordinate is None:
+        return None
+
+    return float(coordinate)
 
 
 def haversine_distance_meters(
