@@ -2,6 +2,7 @@ from datetime import datetime
 from typing import Optional
 
 from pydantic import BaseModel
+from app.models.trip_models import EstimateSource
 
 
 class TripCreate(BaseModel):
@@ -23,7 +24,7 @@ class TripRead(BaseModel):
     dropoff_time: datetime
     estimated_distance_meters: Optional[int] = None
     estimated_duration_minutes: int = 30
-    estimate_source: str = "scheduled"
+    estimate_source: EstimateSource = EstimateSource.SCHEDULED
     estimate_updated_at: datetime
     status: str = "scheduled"
     driver_id: Optional[int] = None
@@ -45,7 +46,7 @@ class TripDetailRead(BaseModel):
     duration_minutes: int
     estimated_distance_meters: Optional[int] = None
     estimated_duration_minutes: int = 30
-    estimate_source: str = "scheduled"
+    estimate_source: EstimateSource = EstimateSource.SCHEDULED
     estimate_updated_at: datetime
     status: str = "scheduled"
     driver_id: Optional[int] = None

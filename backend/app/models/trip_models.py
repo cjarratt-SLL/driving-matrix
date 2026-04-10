@@ -1,7 +1,14 @@
 from datetime import datetime
+from enum import Enum
 from typing import Optional
 
 from sqlmodel import Field, SQLModel
+
+
+class EstimateSource(str, Enum):
+    SCHEDULED = "scheduled"
+    SCHEDULED_WINDOW = "scheduled_window"
+    ROUTE_ESTIMATOR = "route_estimator"
 
 
 class Trip(SQLModel, table=True):
@@ -16,7 +23,7 @@ class Trip(SQLModel, table=True):
 
     estimated_distance_meters: Optional[int] = None
     estimated_duration_minutes: int = 30
-    estimate_source: str = "scheduled"
+    estimate_source: EstimateSource = EstimateSource.SCHEDULED
     estimate_updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     status: str = "scheduled"
