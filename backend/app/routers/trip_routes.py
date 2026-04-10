@@ -6,6 +6,7 @@ from typing import Optional
 from pydantic import BaseModel
 
 from app.db import get_session
+from app.auth import AuthUser, require_trip_mutation_role
 from app.models.driver_models import Driver
 from app.models.location_models import Location
 from app.models.resident_models import Resident
@@ -243,6 +244,7 @@ class VehicleGroupedSchedule(BaseModel):
 def create_trip(
     trip: TripCreate,
     session: Session = Depends(get_session),
+    _: AuthUser = Depends(require_trip_mutation_role),
 ):
     resident = session.get(Resident, trip.resident_id)
     if resident is None:
@@ -311,6 +313,7 @@ def update_trip(
     trip_id: int,
     trip_update: TripUpdate,
     session: Session = Depends(get_session),
+    _: AuthUser = Depends(require_trip_mutation_role),
 ):
     trip = session.get(Trip, trip_id)
     if trip is None:
@@ -416,6 +419,42 @@ def update_trip(
     session.commit()
     session.refresh(trip)
     return build_trip_read(session, trip)
+
+
+@router.post("/{trip_id}/reestimate", response_model=TripRead)
+def reestimate_trip(
+    trip_id: int,
+    session: Session = Depends(get_session),
+    _: AuthUser = Depends(require_trip_mutation_role),
+):
+    trip = session.get(Trip, trip_id)
+    if trip is None:
+        raise HTTPException(status_code=404, detail="Trip not found")
+
+    pickup_location = session.get(Location, trip.pickup_location_id)
+    if pickup_location is None:
+        raise HTTPException(status_code=404, detail="Pickup location not found")
+
+    dropoff_location = session.get(Location, trip.dropoff_location_id)
+    if dropoff_location is None:
+        raise HTTPException(status_code=404, detail="Dropoff location not found")
+
+    apply_trip_estimate_fields(
+        trip,
+        calculate_trip_estimate_fields(
+            pickup_time=trip.pickup_time,
+            dropoff_time=trip.dropoff_time,
+            pickup_location=pickup_location,
+            dropoff_location=dropoff_location,
+        ),
+    )
+
+    session.add(trip)
+    session.commit()
+    session.refresh(trip)
+
+    return build_trip_read(session, trip)
+
 
 @router.get("", response_model=list[TripRead])
 def list_trips(session: Session = Depends(get_session)):
