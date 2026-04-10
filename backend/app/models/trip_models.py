@@ -14,7 +14,10 @@ class Trip(SQLModel, table=True):
     pickup_time: datetime
     dropoff_time: datetime
 
+    estimated_distance_meters: Optional[int] = None
     estimated_duration_minutes: int = 30
+    estimate_source: str = "scheduled"
+    estimate_updated_at: datetime = Field(default_factory=datetime.utcnow)
 
     status: str = "scheduled"
 

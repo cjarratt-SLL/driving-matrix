@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, datetime
 from fastapi import APIRouter, Depends, HTTPException
 from sqlmodel import Session, select
 from typing import Optional
@@ -25,22 +25,35 @@ def calculate_duration_minutes(pickup_time, dropoff_time) -> int:
     return int((dropoff_time - pickup_time).total_seconds() / 60)
 
 
-def calculate_estimated_duration_minutes(
+def calculate_trip_estimate_fields(
     *,
     pickup_time,
     dropoff_time,
     pickup_location: Location,
     dropoff_location: Location,
-) -> int:
+) -> dict:
     route_estimate = estimate_route(
         pickup_location=pickup_location,
         dropoff_location=dropoff_location,
         departure_time=pickup_time,
     )
     if route_estimate is not None:
-        return route_estimate.duration_minutes
+        return {
+            "estimated_distance_meters": route_estimate.distance_meters,
+            "estimated_duration_minutes": route_estimate.duration_minutes,
+            "estimate_source": "route_estimator",
+            "estimate_updated_at": datetime.utcnow(),
+        }
 
-    return calculate_duration_minutes(pickup_time, dropoff_time)
+    return {
+        "estimated_distance_meters": None,
+        "estimated_duration_minutes": calculate_duration_minutes(
+            pickup_time,
+            dropoff_time,
+        ),
+        "estimate_source": "scheduled_window",
+        "estimate_updated_at": datetime.utcnow(),
+    }
 
 def build_trip_read(session: Session, trip: Trip) -> TripRead:
     driver = session.get(Driver, trip.driver_id) if trip.driver_id is not None else None
@@ -53,7 +66,10 @@ def build_trip_read(session: Session, trip: Trip) -> TripRead:
         dropoff_location_id=trip.dropoff_location_id,
         pickup_time=trip.pickup_time,
         dropoff_time=trip.dropoff_time,
+        estimated_distance_meters=trip.estimated_distance_meters,
         estimated_duration_minutes=trip.estimated_duration_minutes,
+        estimate_source=trip.estimate_source,
+        estimate_updated_at=trip.estimate_updated_at,
         status=trip.status,
         driver_id=trip.driver_id,
         driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
@@ -87,7 +103,10 @@ def build_trip_detail_read(
         duration_minutes=calculate_duration_minutes(
             trip.pickup_time, trip.dropoff_time
         ),
+        estimated_distance_meters=trip.estimated_distance_meters,
         estimated_duration_minutes=trip.estimated_duration_minutes,
+        estimate_source=trip.estimate_source,
+        estimate_updated_at=trip.estimate_updated_at,
         status=trip.status,
         driver_id=trip.driver_id,
         driver_name=f"{driver.first_name} {driver.last_name}" if driver else None,
@@ -252,7 +271,7 @@ def create_trip(
         dropoff_location_id=trip.dropoff_location_id,
         pickup_time=trip.pickup_time,
         dropoff_time=trip.dropoff_time,
-        estimated_duration_minutes=calculate_estimated_duration_minutes(
+        **calculate_trip_estimate_fields(
             pickup_time=trip.pickup_time,
             dropoff_time=trip.dropoff_time,
             pickup_location=pickup_location,
@@ -351,12 +370,16 @@ def update_trip(
     if pickup_location is None or dropoff_location is None:
         raise HTTPException(status_code=404, detail="Trip location not found")
 
-    trip.estimated_duration_minutes = calculate_estimated_duration_minutes(
+    trip_estimate_fields = calculate_trip_estimate_fields(
         pickup_time=trip.pickup_time,
         dropoff_time=trip.dropoff_time,
         pickup_location=pickup_location,
         dropoff_location=dropoff_location,
     )
+    trip.estimated_distance_meters = trip_estimate_fields["estimated_distance_meters"]
+    trip.estimated_duration_minutes = trip_estimate_fields["estimated_duration_minutes"]
+    trip.estimate_source = trip_estimate_fields["estimate_source"]
+    trip.estimate_updated_at = trip_estimate_fields["estimate_updated_at"]
 
     assignment_conflict = find_assignment_conflict(
         session=session,

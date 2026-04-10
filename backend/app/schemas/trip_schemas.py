@@ -21,7 +21,10 @@ class TripRead(BaseModel):
     dropoff_location_id: int
     pickup_time: datetime
     dropoff_time: datetime
+    estimated_distance_meters: Optional[int] = None
     estimated_duration_minutes: int = 30
+    estimate_source: str = "scheduled"
+    estimate_updated_at: datetime
     status: str = "scheduled"
     driver_id: Optional[int] = None
     driver_name: Optional[str] = None
@@ -40,7 +43,10 @@ class TripDetailRead(BaseModel):
     pickup_time: datetime
     dropoff_time: datetime
     duration_minutes: int
+    estimated_distance_meters: Optional[int] = None
     estimated_duration_minutes: int = 30
+    estimate_source: str = "scheduled"
+    estimate_updated_at: datetime
     status: str = "scheduled"
     driver_id: Optional[int] = None
     driver_name: Optional[str] = None
