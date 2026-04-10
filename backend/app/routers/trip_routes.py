@@ -11,6 +11,7 @@ from app.models.resident_models import Resident
 from app.models.trip_models import Trip
 from app.models.vehicle_models import Vehicle
 from app.schemas.trip_schemas import TripCreate, TripRead, TripDetailRead, TripUpdate
+from app.services.routing_estimates import estimate_route
 
 router = APIRouter(prefix="/trips", tags=["Trips"])
 
@@ -22,6 +23,24 @@ def trips_overlap(first_trip: Trip, second_trip: Trip) -> bool:
 
 def calculate_duration_minutes(pickup_time, dropoff_time) -> int:
     return int((dropoff_time - pickup_time).total_seconds() / 60)
+
+
+def calculate_estimated_duration_minutes(
+    *,
+    pickup_time,
+    dropoff_time,
+    pickup_location: Location,
+    dropoff_location: Location,
+) -> int:
+    route_estimate = estimate_route(
+        pickup_location=pickup_location,
+        dropoff_location=dropoff_location,
+        departure_time=pickup_time,
+    )
+    if route_estimate is not None:
+        return route_estimate.duration_minutes
+
+    return calculate_duration_minutes(pickup_time, dropoff_time)
 
 def build_trip_read(session: Session, trip: Trip) -> TripRead:
     driver = session.get(Driver, trip.driver_id) if trip.driver_id is not None else None
@@ -233,8 +252,11 @@ def create_trip(
         dropoff_location_id=trip.dropoff_location_id,
         pickup_time=trip.pickup_time,
         dropoff_time=trip.dropoff_time,
-        estimated_duration_minutes=calculate_duration_minutes(
-            trip.pickup_time, trip.dropoff_time
+        estimated_duration_minutes=calculate_estimated_duration_minutes(
+            pickup_time=trip.pickup_time,
+            dropoff_time=trip.dropoff_time,
+            pickup_location=pickup_location,
+            dropoff_location=dropoff_location,
         ),
         status="scheduled",
         driver_id=trip.driver_id,
@@ -324,8 +346,16 @@ def update_trip(
             detail="dropoff_time must be after pickup_time",
         )
     
-    trip.estimated_duration_minutes = calculate_duration_minutes(
-        trip.pickup_time, trip.dropoff_time
+    pickup_location = session.get(Location, trip.pickup_location_id)
+    dropoff_location = session.get(Location, trip.dropoff_location_id)
+    if pickup_location is None or dropoff_location is None:
+        raise HTTPException(status_code=404, detail="Trip location not found")
+
+    trip.estimated_duration_minutes = calculate_estimated_duration_minutes(
+        pickup_time=trip.pickup_time,
+        dropoff_time=trip.dropoff_time,
+        pickup_location=pickup_location,
+        dropoff_location=dropoff_location,
     )
 
     assignment_conflict = find_assignment_conflict(
