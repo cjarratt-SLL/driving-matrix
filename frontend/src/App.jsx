@@ -2,16 +2,20 @@ import { useEffect, useMemo, useState } from "react";
 import "./App.css";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
-const API_USER_ROLE = (import.meta.env.VITE_USER_ROLE || "viewer").toLowerCase();
+const API_USER_ROLE = import.meta.env.VITE_USER_ROLE?.toLowerCase();
 const API_USER_ID = import.meta.env.VITE_USER_ID || "frontend-user";
-const TRIP_MUTATION_ROLES = new Set(["dispatcher", "admin"]);
 
 function buildAuthHeaders(extraHeaders = {}) {
-  return {
+  const headers = {
     ...extraHeaders,
     "x-user-id": API_USER_ID,
-    "x-user-role": API_USER_ROLE,
   };
+
+  if (API_USER_ROLE) {
+    headers["x-user-role"] = API_USER_ROLE;
+  }
+
+  return headers;
 }
 
 const resourceConfig = {
@@ -480,7 +484,12 @@ function App() {
   });
   const [errors, setErrors] = useState({});
   const [loadingStates, setLoadingStates] = useState({});
-  const canMutateTrips = TRIP_MUTATION_ROLES.has(API_USER_ROLE);
+  const [authPolicy, setAuthPolicy] = useState({
+    default_role: "viewer",
+    trip_mutation_roles: [],
+  });
+  const activeUserRole = API_USER_ROLE || authPolicy.default_role;
+  const canMutateTrips = authPolicy.trip_mutation_roles.includes(activeUserRole);
 
   const checkHealth = async () => {
     try {
@@ -494,6 +503,23 @@ function App() {
       setApiStatus(`Backend status: ${payload.status} (${API_BASE_URL})`);
     } catch (error) {
       setApiStatus(`Backend connection failed: ${error.message || String(error)}`);
+    }
+  };
+
+  const fetchAuthPolicy = async () => {
+    try {
+      const response = await fetch(`${API_BASE_URL}/auth/policy`, {
+        headers: buildAuthHeaders(),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Unable to load auth policy (${response.status})`);
+      }
+
+      const payload = await response.json();
+      setAuthPolicy(payload);
+    } catch {
+      setApiStatus((current) => `${current} · Auth policy fallback active`);
     }
   };
 
@@ -541,6 +567,7 @@ function App() {
 
   useEffect(() => {
     checkHealth();
+    fetchAuthPolicy();
     Object.keys(resourceConfig).forEach((key) => {
       fetchResource(key);
     });
@@ -552,6 +579,7 @@ function App() {
         <h1>Driving Matrix</h1>
         <p>Frontend connector basics for core entities and trip creation.</p>
         <p className="status-pill">{apiStatus}</p>
+        <p className="status-pill">Role: {activeUserRole}</p>
       </header>
 
       <section className="grid-layout">

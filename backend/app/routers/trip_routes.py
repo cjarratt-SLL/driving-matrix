@@ -73,6 +73,31 @@ def apply_trip_estimate_fields(trip: Trip, estimate_fields: TripEstimateFields) 
     trip.estimate_source = estimate_fields.estimate_source
     trip.estimate_updated_at = estimate_fields.estimate_updated_at
 
+
+def load_trip_locations(session: Session, trip: Trip) -> tuple[Location, Location]:
+    pickup_location = session.get(Location, trip.pickup_location_id)
+    if pickup_location is None:
+        raise HTTPException(status_code=404, detail="Pickup location not found")
+
+    dropoff_location = session.get(Location, trip.dropoff_location_id)
+    if dropoff_location is None:
+        raise HTTPException(status_code=404, detail="Dropoff location not found")
+
+    return pickup_location, dropoff_location
+
+
+def refresh_trip_estimate(session: Session, trip: Trip) -> None:
+    pickup_location, dropoff_location = load_trip_locations(session, trip)
+    apply_trip_estimate_fields(
+        trip,
+        calculate_trip_estimate_fields(
+            pickup_time=trip.pickup_time,
+            dropoff_time=trip.dropoff_time,
+            pickup_location=pickup_location,
+            dropoff_location=dropoff_location,
+        ),
+    )
+
 def build_trip_read(session: Session, trip: Trip) -> TripRead:
     driver = session.get(Driver, trip.driver_id) if trip.driver_id is not None else None
     vehicle = session.get(Vehicle, trip.vehicle_id) if trip.vehicle_id is not None else None
@@ -294,15 +319,7 @@ def create_trip(
         driver_id=trip.driver_id,
         vehicle_id=trip.vehicle_id,
     )
-    apply_trip_estimate_fields(
-        new_trip,
-        calculate_trip_estimate_fields(
-            pickup_time=trip.pickup_time,
-            dropoff_time=trip.dropoff_time,
-            pickup_location=pickup_location,
-            dropoff_location=dropoff_location,
-        ),
-    )
+    refresh_trip_estimate(session, new_trip)
     session.add(new_trip)
     session.commit()
     session.refresh(new_trip)
@@ -388,20 +405,7 @@ def update_trip(
             detail="dropoff_time must be after pickup_time",
         )
     
-    pickup_location = session.get(Location, trip.pickup_location_id)
-    dropoff_location = session.get(Location, trip.dropoff_location_id)
-    if pickup_location is None or dropoff_location is None:
-        raise HTTPException(status_code=404, detail="Trip location not found")
-
-    apply_trip_estimate_fields(
-        trip,
-        calculate_trip_estimate_fields(
-            pickup_time=trip.pickup_time,
-            dropoff_time=trip.dropoff_time,
-            pickup_location=pickup_location,
-            dropoff_location=dropoff_location,
-        ),
-    )
+    refresh_trip_estimate(session, trip)
 
     assignment_conflict = find_assignment_conflict(
         session=session,
@@ -431,23 +435,7 @@ def reestimate_trip(
     if trip is None:
         raise HTTPException(status_code=404, detail="Trip not found")
 
-    pickup_location = session.get(Location, trip.pickup_location_id)
-    if pickup_location is None:
-        raise HTTPException(status_code=404, detail="Pickup location not found")
-
-    dropoff_location = session.get(Location, trip.dropoff_location_id)
-    if dropoff_location is None:
-        raise HTTPException(status_code=404, detail="Dropoff location not found")
-
-    apply_trip_estimate_fields(
-        trip,
-        calculate_trip_estimate_fields(
-            pickup_time=trip.pickup_time,
-            dropoff_time=trip.dropoff_time,
-            pickup_location=pickup_location,
-            dropoff_location=dropoff_location,
-        ),
-    )
+    refresh_trip_estimate(session, trip)
 
     session.add(trip)
     session.commit()

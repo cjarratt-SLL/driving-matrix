@@ -8,6 +8,7 @@ from app.routers.resident_routes import router as resident_router
 from app.routers.location_routes import router as location_router
 from app.routers.driver_routes import router as driver_router
 from app.routers.vehicle_routes import router as vehicle_router
+from app.routers.auth_routes import router as auth_router
 
 app = FastAPI(title=settings.app_name)
 app.middleware("http")(auth_context_middleware)
@@ -33,6 +34,7 @@ app.include_router(resident_router)
 app.include_router(location_router)
 app.include_router(driver_router)
 app.include_router(vehicle_router)
+app.include_router(auth_router)
 
 @app.get("/")
 def root():

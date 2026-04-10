@@ -1,5 +1,5 @@
-from enum import Enum
 from dataclasses import dataclass
+from enum import Enum
 
 from fastapi import Depends, HTTPException, Request, status
 
@@ -11,8 +11,8 @@ class UserRole(str, Enum):
     READ_ONLY = "read_only"
 
 
-READ_ONLY_ROLES = {UserRole.VIEWER, UserRole.READ_ONLY}
-TRIP_MUTATION_ROLES = {UserRole.ADMIN, UserRole.DISPATCHER}
+DEFAULT_ROLE = UserRole.VIEWER
+TRIP_MUTATION_ROLES = (UserRole.ADMIN, UserRole.DISPATCHER)
 
 
 @dataclass(frozen=True)
@@ -23,12 +23,12 @@ class AuthUser:
 
 async def auth_context_middleware(request: Request, call_next):
     user_id = request.headers.get("x-user-id")
-    role_value = request.headers.get("x-user-role", "viewer").lower().strip()
+    role_value = request.headers.get("x-user-role", DEFAULT_ROLE.value).lower().strip()
 
     try:
         role = UserRole(role_value)
     except ValueError:
-        role = UserRole.VIEWER
+        role = DEFAULT_ROLE
 
     request.state.auth_user = AuthUser(user_id=user_id or "anonymous", role=role)
     return await call_next(request)
@@ -59,3 +59,10 @@ def require_trip_mutation_role(user: AuthUser = Depends(get_current_user)) -> Au
         )
 
     return user
+
+
+def get_auth_policy() -> dict[str, list[str] | str]:
+    return {
+        "default_role": DEFAULT_ROLE.value,
+        "trip_mutation_roles": [role.value for role in TRIP_MUTATION_ROLES],
+    }
