@@ -1,0 +1,137 @@
+.planning-workspace {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+}
+
+.planning-region {
+  min-height: 100%;
+}
+
+.planning-controls-slot,
+.planning-runs-slot,
+.planning-details-slot {
+  min-width: 0;
+}
+
+.planning-run-list-items li {
+  padding: 0;
+}
+
+.run-list-item-button {
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  padding: 0.55rem 0.7rem;
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  text-align: left;
+  cursor: pointer;
+}
+
+.run-list-item-button.is-selected {
+  background: #e2e8f0;
+  font-weight: 600;
+}
+
+.planning-run-details p {
+  margin: 0 0 0.5rem;
+}
+
+.planning-mobile-tabs,
+.planning-tablet-details-toggle-wrap {
+  display: none;
+}
+
+@media (max-width: 1099px) {
+  .planning-workspace {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .planning-details-slot {
+    display: none;
+    grid-column: 1 / -1;
+  }
+
+  .planning-workspace.details-expanded .planning-details-slot {
+    display: block;
+  }
+
+  .planning-tablet-details-toggle-wrap {
+    display: block;
+    grid-column: 1 / -1;
+  }
+
+  .planning-tablet-details-toggle {
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    color: #0f172a;
+    border-radius: 8px;
+    padding: 0.4rem 0.7rem;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+}
+
+@media (max-width: 699px) {
+  .planning-workspace {
+    grid-template-columns: 1fr;
+  }
+
+  .planning-mobile-tabs {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .planning-mobile-tabs button {
+    flex: 1;
+    border: 1px solid #cbd5e1;
+    background: #f8fafc;
+    border-radius: 8px;
+    padding: 0.5rem;
+    cursor: pointer;
+  }
+
+  .planning-mobile-tabs .is-active {
+    background: #0f172a;
+    color: #f8fafc;
+  }
+
+  .planning-controls-slot,
+  .planning-runs-slot,
+  .planning-details-slot,
+  .planning-workspace.details-expanded .planning-details-slot {
+    display: none;
+  }
+
+  .planning-controls-slot.mobile-active,
+  .planning-runs-slot.mobile-active,
+  .planning-details-slot.mobile-active {
+    display: block;
+  }
+
+  .planning-tablet-details-toggle-wrap {
+    display: none;
+  }
+}
+
+@media (prefers-color-scheme: dark) {
+  .run-list-item-button.is-selected {
+    background: #1e293b;
+  }
+
+  .planning-mobile-tabs button,
+  .planning-tablet-details-toggle {
+    background: #0f172a;
+    color: #f8fafc;
+    border-color: #475569;
+  }
+
+  .planning-mobile-tabs .is-active {
+    background: #334155;
+  }
+}
