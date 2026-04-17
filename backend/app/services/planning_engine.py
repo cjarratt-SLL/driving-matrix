@@ -54,6 +54,8 @@ class PlanningScoreWeights:
     on_time_reliability: float
     riders_served: float
     load_balance: float
+    capacity_utilization: float
+    empty_seat_penalty: float
 
 
 @dataclass(frozen=True)
@@ -158,12 +160,15 @@ def build_planning_proposal(
             scored_candidates: list[_ScoredRunProposal] = []
             for driver_id in eligible_driver_ids:
                 for vehicle_id in eligible_vehicle_ids:
+                    vehicle_capacity, _ = vehicle_availability[vehicle_id]
                     metrics = _score_metrics(
                         request_slice=request_slice,
                         requests_by_id=requests_by_id,
                         location_by_id=location_by_id,
                         driver_assigned_run_counts=driver_assigned_run_counts,
                         driver_id=driver_id,
+                        vehicle_id=vehicle_id,
+                        vehicle_capacity=vehicle_capacity,
                         available_driver_count=available_driver_count,
                     )
                     scored_candidates.append(
@@ -554,6 +559,8 @@ def _default_score_weights() -> PlanningScoreWeights:
         on_time_reliability=settings.planning_on_time_reliability_weight,
         riders_served=settings.planning_riders_served_weight,
         load_balance=settings.planning_load_balance_weight,
+        capacity_utilization=settings.planning_capacity_utilization_weight,
+        empty_seat_penalty=settings.planning_empty_seat_penalty_weight,
     )
 
 
@@ -563,6 +570,8 @@ def _score_metrics(
     location_by_id: dict[int, Location],
     driver_assigned_run_counts: dict[int, int],
     driver_id: int,
+    vehicle_id: int,
+    vehicle_capacity: int,
     available_driver_count: int,
 ) -> dict[str, float]:
     requests = [requests_by_id[request_id] for request_id in request_slice]
@@ -586,6 +595,9 @@ def _score_metrics(
     load_balance = 1.0 - (
         current_driver_load / max(available_driver_count, 1)
     )
+    bounded_vehicle_capacity = max(vehicle_capacity, 1)
+    capacity_utilization = len(requests) / bounded_vehicle_capacity
+    empty_seat_penalty = (bounded_vehicle_capacity - len(requests)) / bounded_vehicle_capacity
 
     return {
         "total_minutes": total_minutes,
@@ -593,6 +605,8 @@ def _score_metrics(
         "on_time_reliability": on_time_reliability,
         "riders_served": riders_served,
         "load_balance": load_balance,
+        "capacity_utilization": capacity_utilization,
+        "empty_seat_penalty": empty_seat_penalty,
     }
 
 
@@ -626,4 +640,6 @@ def _weighted_total(metrics: dict[str, float], weights: PlanningScoreWeights) ->
         + (weights.on_time_reliability * metrics["on_time_reliability"])
         + (weights.riders_served * metrics["riders_served"])
         + (weights.load_balance * metrics["load_balance"])
+        + (weights.capacity_utilization * metrics["capacity_utilization"])
+        + (weights.empty_seat_penalty * metrics["empty_seat_penalty"])
     )

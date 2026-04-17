@@ -49,6 +49,8 @@ class Settings:
     planning_on_time_reliability_weight: float = _float_env("PLANNING_ON_TIME_RELIABILITY_WEIGHT", 50.0)
     planning_riders_served_weight: float = _float_env("PLANNING_RIDERS_SERVED_WEIGHT", 10.0)
     planning_load_balance_weight: float = _float_env("PLANNING_LOAD_BALANCE_WEIGHT", 5.0)
+    planning_capacity_utilization_weight: float = _float_env("PLANNING_CAPACITY_UTILIZATION_WEIGHT", 6.0)
+    planning_empty_seat_penalty_weight: float = _float_env("PLANNING_EMPTY_SEAT_PENALTY_WEIGHT", -2.0)
 
 
 settings = Settings()
