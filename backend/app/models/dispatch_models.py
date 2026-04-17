@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Optional
 
@@ -38,8 +38,8 @@ class TripRequest(SQLModel, table=True):
         sa_type=SAEnum(TripRequestStatus, name="trip_request_status"),
     )
 
-    created_at: datetime = Field(default_factory=datetime.utcnow, sa_type=DateTime(timezone=True))
-    updated_at: datetime = Field(default_factory=datetime.utcnow, sa_type=DateTime(timezone=True))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_type=DateTime(timezone=True))
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_type=DateTime(timezone=True))
 
     __table_args__ = (
         Index(
@@ -65,7 +65,7 @@ class TripRun(SQLModel, table=True):
         sa_type=SAEnum(TripRunStatus, name="trip_run_status"),
     )
 
-    created_at: datetime = Field(default_factory=datetime.utcnow, sa_type=DateTime(timezone=True))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc), sa_type=DateTime(timezone=True))
 
     __table_args__ = (
         Index("ix_trip_run_window", "window_start", "window_end"),
