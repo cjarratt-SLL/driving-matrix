@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import "./PlanningWorkspace.css";
 
-function getRunIdFromUrl() {
-  const params = new URLSearchParams(window.location.search);
+function parseRunIdFromSearch(search) {
+  const params = new URLSearchParams(search);
   const rawRunId = params.get("runId");
   if (!rawRunId) {
     return null;
@@ -12,7 +12,7 @@ function getRunIdFromUrl() {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
-function setRunIdInUrl(runId, replace = false) {
+function buildRunIdUrl(runId) {
   const params = new URLSearchParams(window.location.search);
   if (runId == null) {
     params.delete("runId");
@@ -21,13 +21,34 @@ function setRunIdInUrl(runId, replace = false) {
   }
 
   const nextQuery = params.toString();
-  const nextUrl = `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash}`;
+  return `${window.location.pathname}${nextQuery ? `?${nextQuery}` : ""}${window.location.hash}`;
+}
 
-  if (replace) {
-    window.history.replaceState(null, "", nextUrl);
-  } else {
+function useRunIdFromUrl() {
+  const [runId, setRunId] = useState(() => parseRunIdFromSearch(window.location.search));
+
+  useEffect(() => {
+    const onPopState = () => {
+      setRunId(parseRunIdFromSearch(window.location.search));
+    };
+
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, []);
+
+  const updateRunId = useCallback((nextRunId, replace = false) => {
+    setRunId(nextRunId);
+    const nextUrl = buildRunIdUrl(nextRunId);
+
+    if (replace) {
+      window.history.replaceState(null, "", nextUrl);
+      return;
+    }
+
     window.history.pushState(null, "", nextUrl);
-  }
+  }, []);
+
+  return [runId, updateRunId];
 }
 
 function formatTripSummary(trip) {
@@ -39,8 +60,9 @@ function PlanningControlsPanel({
   dataSources,
   createRun,
   saving,
-  error,
-  onErrorClear,
+  listError,
+  createError,
+  onCreateErrorClear,
 }) {
   const [form, setForm] = useState({
     resident_id: "",
@@ -58,7 +80,7 @@ function PlanningControlsPanel({
       return;
     }
 
-    onErrorClear();
+    onCreateErrorClear();
 
     const payload = {
       resident_id: Number(form.resident_id),
@@ -91,7 +113,8 @@ function PlanningControlsPanel({
       </header>
 
       {!canMutateTrips ? <p className="status-pill">Read-only: run creation is disabled.</p> : null}
-      {error ? <p className="error-text">{error}</p> : null}
+      {listError ? <p className="error-text">{listError}</p> : null}
+      {createError ? <p className="error-text">{createError}</p> : null}
 
       <form className="entry-form" onSubmit={handleSubmit}>
         <fieldset disabled={!canMutateTrips || saving}>
@@ -235,14 +258,14 @@ function PlanningRunsList({ runs, loading, selectedRunId, onSelectRun, onRefresh
   );
 }
 
-function PlanningRunDetailsPanel({ run, canMutateTrips, onReestimate, reestimatingRunId, error }) {
+function PlanningRunDetailsPanel({ run, canMutateTrips, onReestimate, reestimatingRunId, reestimateError }) {
   return (
     <section className="panel planning-region planning-run-details-panel">
       <header className="panel-header">
         <h2>Run Details</h2>
       </header>
 
-      {error ? <p className="error-text">{error}</p> : null}
+      {reestimateError ? <p className="error-text">{reestimateError}</p> : null}
 
       {!run ? (
         <p className="empty-row">Select a run from the list to view details.</p>
@@ -275,8 +298,10 @@ function PlanningWorkspace({ apiBaseUrl, buildAuthHeaders, dataSources, canMutat
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [reestimatingRunId, setReestimatingRunId] = useState(null);
-  const [error, setError] = useState("");
-  const [selectedRunId, setSelectedRunId] = useState(() => getRunIdFromUrl());
+  const [listError, setListError] = useState("");
+  const [createError, setCreateError] = useState("");
+  const [reestimateError, setReestimateError] = useState("");
+  const [selectedRunId, setSelectedRunIdInUrl] = useRunIdFromUrl();
   const [mobileTab, setMobileTab] = useState("controls");
   const [tabletDetailsExpanded, setTabletDetailsExpanded] = useState(false);
 
@@ -287,7 +312,7 @@ function PlanningWorkspace({ apiBaseUrl, buildAuthHeaders, dataSources, canMutat
 
   const loadRuns = useCallback(async () => {
     setLoading(true);
-    setError("");
+    setListError("");
 
     try {
       const response = await fetch(`${apiBaseUrl}/trips`, {
@@ -301,7 +326,7 @@ function PlanningWorkspace({ apiBaseUrl, buildAuthHeaders, dataSources, canMutat
       const payload = await response.json();
       setRuns(payload);
     } catch (loadError) {
-      setError(loadError.message || "Unable to load runs");
+      setListError(loadError.message || "Unable to load runs");
     } finally {
       setLoading(false);
     }
@@ -312,41 +337,30 @@ function PlanningWorkspace({ apiBaseUrl, buildAuthHeaders, dataSources, canMutat
   }, [loadRuns]);
 
   useEffect(() => {
-    const onPopState = () => {
-      setSelectedRunId(getRunIdFromUrl());
-    };
-
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
-
-  useEffect(() => {
     if (selectedRunId == null) {
       return;
     }
 
     const stillExists = runs.some((run) => run.id === selectedRunId);
     if (!stillExists) {
-      setSelectedRunId(null);
-      setRunIdInUrl(null, true);
+      setSelectedRunIdInUrl(null, true);
     }
-  }, [runs, selectedRunId]);
+  }, [runs, selectedRunId, setSelectedRunIdInUrl]);
 
   const handleSelectRun = (runId) => {
-    setSelectedRunId(runId);
-    setRunIdInUrl(runId, false);
+    setSelectedRunIdInUrl(runId, false);
     setMobileTab("details");
     setTabletDetailsExpanded(true);
   };
 
   const createRun = async (payload) => {
     if (!canMutateTrips) {
-      setError("You have read-only access for run creation.");
+      setCreateError("You have read-only access for run creation.");
       return null;
     }
 
     setSaving(true);
-    setError("");
+    setCreateError("");
 
     try {
       const response = await fetch(`${apiBaseUrl}/trips`, {
@@ -364,8 +378,8 @@ function PlanningWorkspace({ apiBaseUrl, buildAuthHeaders, dataSources, canMutat
       await loadRuns();
       handleSelectRun(createdRun.id);
       return createdRun;
-    } catch (createError) {
-      setError(createError.message || "Unable to create run");
+    } catch (createRunError) {
+      setCreateError(createRunError.message || "Unable to create run");
       return null;
     } finally {
       setSaving(false);
@@ -374,12 +388,12 @@ function PlanningWorkspace({ apiBaseUrl, buildAuthHeaders, dataSources, canMutat
 
   const reestimateRun = async (runId) => {
     if (!canMutateTrips) {
-      setError("You have read-only access for estimate recalculation.");
+      setReestimateError("You have read-only access for estimate recalculation.");
       return;
     }
 
     setReestimatingRunId(runId);
-    setError("");
+    setReestimateError("");
 
     try {
       const response = await fetch(`${apiBaseUrl}/trips/${runId}/reestimate`, {
@@ -393,8 +407,8 @@ function PlanningWorkspace({ apiBaseUrl, buildAuthHeaders, dataSources, canMutat
       }
 
       await loadRuns();
-    } catch (reestimateError) {
-      setError(reestimateError.message || "Unable to re-estimate run");
+    } catch (reestimateRunError) {
+      setReestimateError(reestimateRunError.message || "Unable to re-estimate run");
     } finally {
       setReestimatingRunId(null);
     }
@@ -444,8 +458,9 @@ function PlanningWorkspace({ apiBaseUrl, buildAuthHeaders, dataSources, canMutat
           dataSources={dataSources}
           createRun={createRun}
           saving={saving}
-          error={error}
-          onErrorClear={() => setError("")}
+          listError={listError}
+          createError={createError}
+          onCreateErrorClear={() => setCreateError("")}
         />
       </div>
 
@@ -465,7 +480,7 @@ function PlanningWorkspace({ apiBaseUrl, buildAuthHeaders, dataSources, canMutat
           canMutateTrips={canMutateTrips}
           onReestimate={reestimateRun}
           reestimatingRunId={reestimatingRunId}
-          error={error}
+          reestimateError={reestimateError}
         />
       </div>
     </section>

@@ -1,23 +1,10 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import "./App.css";
 import PlanningWorkspace from "./features/planning/PlanningWorkspace";
 
 const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "http://127.0.0.1:8000";
 const API_USER_ROLE = import.meta.env.VITE_USER_ROLE?.toLowerCase();
 const API_USER_ID = import.meta.env.VITE_USER_ID || "frontend-user";
-
-function buildAuthHeaders(extraHeaders = {}) {
-  const headers = {
-    ...extraHeaders,
-    "x-user-id": API_USER_ID,
-  };
-
-  if (API_USER_ROLE) {
-    headers["x-user-role"] = API_USER_ROLE;
-  }
-
-  return headers;
-}
 
 const resourceConfig = {
   residents: {
@@ -208,6 +195,19 @@ function ResourcePanel({ config, records, loading, error, onRefresh, onCreate })
 }
 
 function App() {
+  const buildAuthHeaders = useCallback((extraHeaders = {}) => {
+    const headers = {
+      ...extraHeaders,
+      "x-user-id": API_USER_ID,
+    };
+
+    if (API_USER_ROLE) {
+      headers["x-user-role"] = API_USER_ROLE;
+    }
+
+    return headers;
+  }, []);
+
   const [apiStatus, setApiStatus] = useState("Checking backend...");
   const [data, setData] = useState({
     residents: [],
@@ -224,7 +224,7 @@ function App() {
   const activeUserRole = API_USER_ROLE || authPolicy.default_role;
   const canMutateTrips = authPolicy.trip_mutation_roles.includes(activeUserRole);
 
-  const checkHealth = async () => {
+  const checkHealth = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/health`, {
         headers: buildAuthHeaders(),
@@ -237,9 +237,9 @@ function App() {
     } catch (error) {
       setApiStatus(`Backend connection failed: ${error.message || String(error)}`);
     }
-  };
+  }, [buildAuthHeaders]);
 
-  const fetchAuthPolicy = async () => {
+  const fetchAuthPolicy = useCallback(async () => {
     try {
       const response = await fetch(`${API_BASE_URL}/auth/policy`, {
         headers: buildAuthHeaders(),
@@ -254,9 +254,9 @@ function App() {
     } catch {
       setApiStatus((current) => `${current} · Auth policy fallback active`);
     }
-  };
+  }, [buildAuthHeaders]);
 
-  const fetchResource = async (key) => {
+  const fetchResource = useCallback(async (key) => {
     const config = resourceConfig[key];
     if (!config) {
       return;
@@ -279,9 +279,9 @@ function App() {
     } finally {
       setLoadingStates((current) => ({ ...current, [key]: false }));
     }
-  };
+  }, [buildAuthHeaders]);
 
-  const createResource = async (key, payload) => {
+  const createResource = useCallback(async (key, payload) => {
     const config = resourceConfig[key];
 
     const response = await fetch(`${API_BASE_URL}${config.endpoint}`, {
@@ -296,7 +296,7 @@ function App() {
     }
 
     await fetchResource(key);
-  };
+  }, [fetchResource]);
 
   useEffect(() => {
     checkHealth();
@@ -304,7 +304,7 @@ function App() {
     Object.keys(resourceConfig).forEach((key) => {
       fetchResource(key);
     });
-  }, []);
+  }, [checkHealth, fetchAuthPolicy, fetchResource]);
 
   return (
     <main className="app-shell">
