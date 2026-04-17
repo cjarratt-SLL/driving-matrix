@@ -370,6 +370,7 @@ def test_score_metrics_load_balance_is_bounded_between_zero_and_one():
         requests_by_id={request.id: request},
         location_by_id={},
         driver_assigned_run_counts={1: 100, 2: 0},
+        max_assigned_run_count=100,
         driver_id=1,
         vehicle_id=1,
         vehicle_capacity=4,
@@ -379,6 +380,7 @@ def test_score_metrics_load_balance_is_bounded_between_zero_and_one():
         requests_by_id={request.id: request},
         location_by_id={},
         driver_assigned_run_counts={1: 100, 2: 0},
+        max_assigned_run_count=100,
         driver_id=2,
         vehicle_id=1,
         vehicle_capacity=4,
@@ -386,6 +388,34 @@ def test_score_metrics_load_balance_is_bounded_between_zero_and_one():
 
     assert 0.0 <= heavily_loaded_metrics["load_balance"] <= 1.0
     assert 0.0 <= lightly_loaded_metrics["load_balance"] <= 1.0
+
+
+def test_score_metrics_load_balance_is_maximal_when_all_drivers_have_zero_runs():
+    request = _request(1002, 1, 1, 2, datetime(2026, 4, 29, 9, 0), datetime(2026, 4, 29, 9, 10))
+
+    zero_load_metrics_driver_1 = _score_metrics(
+        request_slice=[request.id],
+        requests_by_id={request.id: request},
+        location_by_id={},
+        driver_assigned_run_counts={1: 0, 2: 0},
+        max_assigned_run_count=0,
+        driver_id=1,
+        vehicle_id=1,
+        vehicle_capacity=4,
+    )
+    zero_load_metrics_driver_2 = _score_metrics(
+        request_slice=[request.id],
+        requests_by_id={request.id: request},
+        location_by_id={},
+        driver_assigned_run_counts={1: 0, 2: 0},
+        max_assigned_run_count=0,
+        driver_id=2,
+        vehicle_id=1,
+        vehicle_capacity=4,
+    )
+
+    assert zero_load_metrics_driver_1["load_balance"] == 1.0
+    assert zero_load_metrics_driver_2["load_balance"] == 1.0
 
 
 def test_build_planning_proposal_repeated_assignments_do_not_produce_negative_load_balance(session):
@@ -429,6 +459,7 @@ def test_score_metrics_load_balance_prefers_less_loaded_drivers():
         requests_by_id={request.id: request},
         location_by_id={},
         driver_assigned_run_counts={1: 3, 2: 1},
+        max_assigned_run_count=3,
         driver_id=1,
         vehicle_id=1,
         vehicle_capacity=4,
@@ -438,6 +469,7 @@ def test_score_metrics_load_balance_prefers_less_loaded_drivers():
         requests_by_id={request.id: request},
         location_by_id={},
         driver_assigned_run_counts={1: 3, 2: 1},
+        max_assigned_run_count=3,
         driver_id=2,
         vehicle_id=1,
         vehicle_capacity=4,

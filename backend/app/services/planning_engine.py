@@ -156,6 +156,7 @@ def build_planning_proposal(
                     _append_reason(reasons, request_slice, "vehicle_unavailable_or_capacity")
                 continue
 
+            current_max_assigned_runs = max(driver_assigned_run_counts.values(), default=0)
             scored_candidates: list[_ScoredRunProposal] = []
             for driver_id in eligible_driver_ids:
                 for vehicle_id in eligible_vehicle_ids:
@@ -165,6 +166,7 @@ def build_planning_proposal(
                         requests_by_id=requests_by_id,
                         location_by_id=location_by_id,
                         driver_assigned_run_counts=driver_assigned_run_counts,
+                        max_assigned_run_count=current_max_assigned_runs,
                         driver_id=driver_id,
                         vehicle_id=vehicle_id,
                         vehicle_capacity=vehicle_capacity,
@@ -567,6 +569,7 @@ def _score_metrics(
     requests_by_id: dict[int, TripRequest],
     location_by_id: dict[int, Location],
     driver_assigned_run_counts: dict[int, int],
+    max_assigned_run_count: int,
     driver_id: int,
     vehicle_id: int,
     vehicle_capacity: int,
@@ -589,8 +592,14 @@ def _score_metrics(
     riders_served = float(len(requests))
 
     current_driver_load = driver_assigned_run_counts.get(driver_id, 0)
-    max_load = max(driver_assigned_run_counts.values(), default=0)
-    load_balance = 1.0 - (current_driver_load / max(max_load, 1))
+    if current_driver_load < 0 or max_assigned_run_count < 0:
+        msg = "driver_assigned_run_counts values must be non-negative"
+        raise ValueError(msg)
+    if current_driver_load > max_assigned_run_count:
+        msg = "max_assigned_run_count must be >= current driver load"
+        raise ValueError(msg)
+
+    load_balance = 1.0 - (current_driver_load / max(max_assigned_run_count, 1))
     load_balance = min(1.0, max(0.0, load_balance))
     bounded_vehicle_capacity = max(vehicle_capacity, 1)
     capacity_utilization = len(requests) / bounded_vehicle_capacity
