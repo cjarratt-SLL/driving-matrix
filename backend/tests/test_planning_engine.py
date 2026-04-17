@@ -284,6 +284,36 @@ def test_build_planning_proposal_includes_weighted_score_metrics(session):
     assert run["score"] == pytest.approx(expected_score, rel=1e-9)
 
 
+def test_build_planning_proposal_scores_zero_miles_when_coordinates_missing(session):
+    session.add_all(
+        [
+            DriverAvailabilityWindow(driver_id=1, start_time=datetime(2026, 4, 26, 8, 0), end_time=datetime(2026, 4, 26, 12, 0)),
+            VehicleAvailabilityWindow(vehicle_id=1, start_time=datetime(2026, 4, 26, 8, 0), end_time=datetime(2026, 4, 26, 12, 0)),
+            _request(711, 1, 1, 4, datetime(2026, 4, 26, 9, 0), datetime(2026, 4, 26, 9, 20)),
+            _request(712, 2, 9999, 2, datetime(2026, 4, 26, 10, 1), datetime(2026, 4, 26, 10, 21)),
+        ]
+    )
+    session.commit()
+
+    proposal = build_planning_proposal(
+        session,
+        window_start=datetime(2026, 4, 26, 8, 0),
+        window_end=datetime(2026, 4, 26, 12, 0),
+        heuristics=PlanningHeuristics(pickup_window_tolerance_minutes=0, max_detour_meters=1, max_occupancy=1),
+        score_weights=PlanningScoreWeights(
+            total_minutes=0.0,
+            total_miles=-1.0,
+            on_time_reliability=0.0,
+            riders_served=0.0,
+            load_balance=0.0,
+        ),
+    )
+
+    assert len(proposal.runs) == 2
+    assert all(run["score_metrics"]["total_miles"] == 0.0 for run in proposal.runs)
+    assert all(run["score"] == 0.0 for run in proposal.runs)
+
+
 def test_build_planning_proposal_uses_deterministic_tie_breaking(session):
     session.add_all(
         [
@@ -361,3 +391,47 @@ def test_build_planning_proposal_load_balance_prefers_less_loaded_driver_on_foll
     assert len(proposal.runs) == 2
     assert proposal.runs[0]["driver_id"] == 1
     assert proposal.runs[1]["driver_id"] == 2
+
+
+def test_build_planning_proposal_load_balance_overrides_when_other_weights_unchanged(session):
+    session.add_all(
+        [
+            DriverAvailabilityWindow(driver_id=1, start_time=datetime(2026, 4, 29, 8, 0), end_time=datetime(2026, 4, 29, 12, 0)),
+            DriverAvailabilityWindow(driver_id=2, start_time=datetime(2026, 4, 29, 8, 0), end_time=datetime(2026, 4, 29, 12, 0)),
+            VehicleAvailabilityWindow(vehicle_id=1, start_time=datetime(2026, 4, 29, 8, 0), end_time=datetime(2026, 4, 29, 12, 0)),
+            VehicleAvailabilityWindow(vehicle_id=2, start_time=datetime(2026, 4, 29, 8, 0), end_time=datetime(2026, 4, 29, 12, 0)),
+            _request(921, 1, 1, 2, datetime(2026, 4, 29, 9, 0), datetime(2026, 4, 29, 9, 10)),
+            _request(922, 2, 3, 2, datetime(2026, 4, 29, 10, 0), datetime(2026, 4, 29, 10, 10)),
+        ]
+    )
+    session.commit()
+
+    baseline = build_planning_proposal(
+        session,
+        window_start=datetime(2026, 4, 29, 8, 0),
+        window_end=datetime(2026, 4, 29, 12, 0),
+        heuristics=PlanningHeuristics(pickup_window_tolerance_minutes=0, max_detour_meters=1, max_occupancy=1),
+        score_weights=PlanningScoreWeights(
+            total_minutes=-0.1,
+            total_miles=-0.1,
+            on_time_reliability=1.0,
+            riders_served=1.0,
+            load_balance=0.0,
+        ),
+    )
+    with_load_balance = build_planning_proposal(
+        session,
+        window_start=datetime(2026, 4, 29, 8, 0),
+        window_end=datetime(2026, 4, 29, 12, 0),
+        heuristics=PlanningHeuristics(pickup_window_tolerance_minutes=0, max_detour_meters=1, max_occupancy=1),
+        score_weights=PlanningScoreWeights(
+            total_minutes=-0.1,
+            total_miles=-0.1,
+            on_time_reliability=1.0,
+            riders_served=1.0,
+            load_balance=1.0,
+        ),
+    )
+
+    assert [run["driver_id"] for run in baseline.runs] == [1, 1]
+    assert [run["driver_id"] for run in with_load_balance.runs] == [1, 2]
