@@ -9,6 +9,7 @@ from app.models.vehicle_models import VehicleAvailabilityWindow
 from app.services.planning_engine import (
     PlanningHeuristics,
     PlanningScoreWeights,
+    _score_metrics,
     build_planning_proposal,
     group_requests_by_destination_and_window,
     load_pending_trip_requests,
@@ -359,3 +360,119 @@ def test_build_planning_proposal_prefers_higher_capacity_utilization_vehicle(ses
     run = proposal.runs[0]
     assert run["vehicle_id"] == 2
     assert run["score_metrics"]["capacity_utilization"] > 0.3
+
+
+def test_score_metrics_load_balance_is_bounded_between_zero_and_one():
+    request = _request(1001, 1, 1, 2, datetime(2026, 4, 29, 9, 0), datetime(2026, 4, 29, 9, 10))
+
+    heavily_loaded_metrics = _score_metrics(
+        request_slice=[request.id],
+        requests_by_id={request.id: request},
+        location_by_id={},
+        driver_assigned_run_counts={1: 100, 2: 0},
+        max_assigned_run_count=100,
+        driver_id=1,
+        vehicle_id=1,
+        vehicle_capacity=4,
+    )
+    lightly_loaded_metrics = _score_metrics(
+        request_slice=[request.id],
+        requests_by_id={request.id: request},
+        location_by_id={},
+        driver_assigned_run_counts={1: 100, 2: 0},
+        max_assigned_run_count=100,
+        driver_id=2,
+        vehicle_id=1,
+        vehicle_capacity=4,
+    )
+
+    assert 0.0 <= heavily_loaded_metrics["load_balance"] <= 1.0
+    assert 0.0 <= lightly_loaded_metrics["load_balance"] <= 1.0
+
+
+def test_score_metrics_load_balance_is_maximal_when_all_drivers_have_zero_runs():
+    request = _request(1002, 1, 1, 2, datetime(2026, 4, 29, 9, 0), datetime(2026, 4, 29, 9, 10))
+
+    zero_load_metrics_driver_1 = _score_metrics(
+        request_slice=[request.id],
+        requests_by_id={request.id: request},
+        location_by_id={},
+        driver_assigned_run_counts={1: 0, 2: 0},
+        max_assigned_run_count=0,
+        driver_id=1,
+        vehicle_id=1,
+        vehicle_capacity=4,
+    )
+    zero_load_metrics_driver_2 = _score_metrics(
+        request_slice=[request.id],
+        requests_by_id={request.id: request},
+        location_by_id={},
+        driver_assigned_run_counts={1: 0, 2: 0},
+        max_assigned_run_count=0,
+        driver_id=2,
+        vehicle_id=1,
+        vehicle_capacity=4,
+    )
+
+    assert zero_load_metrics_driver_1["load_balance"] == 1.0
+    assert zero_load_metrics_driver_2["load_balance"] == 1.0
+
+
+def test_build_planning_proposal_repeated_assignments_do_not_produce_negative_load_balance(session):
+    session.add_all(
+        [
+            DriverAvailabilityWindow(driver_id=1, start_time=datetime(2026, 4, 29, 8, 0), end_time=datetime(2026, 4, 29, 12, 0)),
+            VehicleAvailabilityWindow(vehicle_id=1, start_time=datetime(2026, 4, 29, 8, 0), end_time=datetime(2026, 4, 29, 12, 0)),
+            _request(1101, 1, 1, 2, datetime(2026, 4, 29, 9, 0), datetime(2026, 4, 29, 9, 10)),
+            _request(1102, 2, 3, 2, datetime(2026, 4, 29, 9, 15), datetime(2026, 4, 29, 9, 25)),
+            _request(1103, 3, 1, 2, datetime(2026, 4, 29, 9, 30), datetime(2026, 4, 29, 9, 40)),
+        ]
+    )
+    session.commit()
+
+    proposal = build_planning_proposal(
+        session,
+        window_start=datetime(2026, 4, 29, 8, 0),
+        window_end=datetime(2026, 4, 29, 12, 0),
+        heuristics=PlanningHeuristics(pickup_window_tolerance_minutes=0, max_detour_meters=1, max_occupancy=1),
+        score_weights=PlanningScoreWeights(
+            total_minutes=0.0,
+            total_miles=0.0,
+            on_time_reliability=0.0,
+            riders_served=0.0,
+            load_balance=1.0,
+            capacity_utilization=0.0,
+            empty_seat_penalty=0.0,
+        ),
+    )
+
+    assert len(proposal.runs) == 3
+    assert all(run["score_metrics"]["load_balance"] >= 0.0 for run in proposal.runs)
+    assert all(run["score_metrics"]["load_balance"] <= 1.0 for run in proposal.runs)
+
+
+def test_score_metrics_load_balance_prefers_less_loaded_drivers():
+    request = _request(1201, 1, 1, 2, datetime(2026, 4, 30, 9, 0), datetime(2026, 4, 30, 9, 10))
+
+    overloaded_metrics = _score_metrics(
+        request_slice=[request.id],
+        requests_by_id={request.id: request},
+        location_by_id={},
+        driver_assigned_run_counts={1: 3, 2: 1},
+        max_assigned_run_count=3,
+        driver_id=1,
+        vehicle_id=1,
+        vehicle_capacity=4,
+    )
+    underloaded_metrics = _score_metrics(
+        request_slice=[request.id],
+        requests_by_id={request.id: request},
+        location_by_id={},
+        driver_assigned_run_counts={1: 3, 2: 1},
+        max_assigned_run_count=3,
+        driver_id=2,
+        vehicle_id=1,
+        vehicle_capacity=4,
+    )
+
+    assert underloaded_metrics["load_balance"] > overloaded_metrics["load_balance"]
