@@ -68,7 +68,7 @@ def test_build_planning_proposal_assigns_compatible_requests(session):
     assert proposal.runs[0]["vehicle_id"] == 2
     assert proposal.runs[1]["request_ids"] == [103]
     assert proposal.runs[1]["driver_id"] == 1
-    assert proposal.runs[1]["vehicle_id"] == 1
+    assert proposal.runs[1]["vehicle_id"] == 2
     assert proposal.unassigned_requests == []
     assert proposal.reasons == {}
 
@@ -259,6 +259,8 @@ def test_build_planning_proposal_includes_weighted_score_metrics(session):
             on_time_reliability=5.0,
             riders_served=2.0,
             load_balance=0.0,
+            capacity_utilization=3.0,
+            empty_seat_penalty=-1.5,
         ),
     )
 
@@ -270,6 +272,8 @@ def test_build_planning_proposal_includes_weighted_score_metrics(session):
         "on_time_reliability",
         "riders_served",
         "load_balance",
+        "capacity_utilization",
+        "empty_seat_penalty",
     }
     assert isinstance(run["score"], float)
 
@@ -298,6 +302,8 @@ def test_build_planning_proposal_uses_deterministic_tie_breaking(session):
             on_time_reliability=0.0,
             riders_served=0.0,
             load_balance=0.0,
+            capacity_utilization=0.0,
+            empty_seat_penalty=0.0,
         ),
     )
     second = build_planning_proposal(
@@ -311,6 +317,8 @@ def test_build_planning_proposal_uses_deterministic_tie_breaking(session):
             on_time_reliability=0.0,
             riders_served=0.0,
             load_balance=0.0,
+            capacity_utilization=0.0,
+            empty_seat_penalty=0.0,
         ),
     )
 
@@ -319,3 +327,35 @@ def test_build_planning_proposal_uses_deterministic_tie_breaking(session):
         (1, 1, [801]),
         (2, 2, [802]),
     ]
+
+
+def test_build_planning_proposal_prefers_higher_capacity_utilization_vehicle(session):
+    session.add_all(
+        [
+            DriverAvailabilityWindow(driver_id=1, start_time=datetime(2026, 4, 28, 8, 0), end_time=datetime(2026, 4, 28, 12, 0)),
+            VehicleAvailabilityWindow(vehicle_id=1, start_time=datetime(2026, 4, 28, 8, 0), end_time=datetime(2026, 4, 28, 12, 0)),
+            VehicleAvailabilityWindow(vehicle_id=2, start_time=datetime(2026, 4, 28, 8, 0), end_time=datetime(2026, 4, 28, 12, 0)),
+            _request(901, 1, 1, 2, datetime(2026, 4, 28, 9, 0), datetime(2026, 4, 28, 9, 20)),
+        ]
+    )
+    session.commit()
+
+    proposal = build_planning_proposal(
+        session,
+        window_start=datetime(2026, 4, 28, 8, 0),
+        window_end=datetime(2026, 4, 28, 12, 0),
+        score_weights=PlanningScoreWeights(
+            total_minutes=0.0,
+            total_miles=0.0,
+            on_time_reliability=0.0,
+            riders_served=0.0,
+            load_balance=0.0,
+            capacity_utilization=20.0,
+            empty_seat_penalty=0.0,
+        ),
+    )
+
+    assert len(proposal.runs) == 1
+    run = proposal.runs[0]
+    assert run["vehicle_id"] == 2
+    assert run["score_metrics"]["capacity_utilization"] > 0.3
