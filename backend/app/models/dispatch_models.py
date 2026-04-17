@@ -85,5 +85,4 @@ class RunAssignment(SQLModel, table=True):
     __table_args__ = (
         UniqueConstraint("run_id", "trip_request_id", name="uq_run_assignment_run_request"),
         UniqueConstraint("run_id", "stop_order", name="uq_run_assignment_run_stop_order"),
-        Index("ix_run_assignment_run_stop_order", "run_id", "stop_order"),
     )

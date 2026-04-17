@@ -52,8 +52,8 @@ CREATE INDEX IF NOT EXISTS ix_triprun_driver_id ON triprun (driver_id);
 CREATE INDEX IF NOT EXISTS ix_triprun_vehicle_id ON triprun (vehicle_id);
 
 -- assignment uniqueness and sequencing
-CREATE INDEX IF NOT EXISTS ix_run_assignment_run_stop_order
-    ON runassignment (run_id, stop_order);
+-- (run_id, stop_order) is already indexed by uq_run_assignment_run_stop_order
+DROP INDEX IF EXISTS ix_run_assignment_run_stop_order;
 CREATE INDEX IF NOT EXISTS ix_runassignment_trip_request_id ON runassignment (trip_request_id);
 
 COMMIT;
