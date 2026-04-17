@@ -17,6 +17,38 @@ from app.services.planning_engine import (
 from app.services.routing_estimates import haversine_distance_meters
 
 
+def test_request_distance_miles_returns_zero_when_locations_or_coordinates_missing():
+    """
+    Ensure `_request_distance_miles` returns 0.0 when one or both locations are None
+    or when either location has missing latitude/longitude.
+    """
+    # Import locally to keep the private helper usage scoped to this test.
+    from app.services.planning_engine import _request_distance_miles
+
+    class DummyLocation:
+        def __init__(self, lat, lng):
+            self.latitude = lat
+            self.longitude = lng
+
+    full = DummyLocation(40.0, -105.0)
+    no_lat = DummyLocation(None, -105.0)
+    no_lng = DummyLocation(40.0, None)
+    missing = None
+
+    # Both locations missing
+    assert _request_distance_miles(missing, missing) == 0.0
+
+    # One side missing
+    assert _request_distance_miles(full, missing) == 0.0
+    assert _request_distance_miles(missing, full) == 0.0
+
+    # Coordinates missing on either side
+    assert _request_distance_miles(no_lat, full) == 0.0
+    assert _request_distance_miles(full, no_lat) == 0.0
+    assert _request_distance_miles(no_lng, full) == 0.0
+    assert _request_distance_miles(full, no_lng) == 0.0
+
+
 def _request(
     request_id: int,
     resident_id: int,
