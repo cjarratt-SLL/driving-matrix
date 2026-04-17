@@ -5,6 +5,7 @@ from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlmodel import Session, select
+from sqlalchemy import or_
 
 from app.models.dispatch_models import TripRequest, TripRequestStatus, TripRun, TripRunStatus
 from app.models.driver_models import Driver, DriverAvailabilityWindow
@@ -68,16 +69,34 @@ def build_planning_proposal(
     heuristics = heuristics or PlanningHeuristics()
 
     pending_requests = load_pending_trip_requests(session, window_start=window_start, window_end=window_end)
-    location_by_id = _load_locations_by_id(session)
+    requests_by_id = {request.id: request for request in pending_requests if request.id is not None}
+    location_ids = {
+        location_id
+        for request in pending_requests
+        for location_id in (request.pickup_location_id, request.dropoff_location_id)
+    }
+    location_by_id = _load_locations_by_id(session, location_ids=location_ids)
     grouped_requests = group_requests_by_destination_and_window(
         pending_requests,
         location_by_id=location_by_id,
         heuristics=heuristics,
     )
 
-    driver_availability = _load_driver_availability(session)
-    vehicle_availability = _load_vehicle_availability(session)
-    committed_driver_windows, committed_vehicle_windows = _load_committed_run_windows(session)
+    driver_availability = _load_driver_availability(
+        session,
+        window_start=window_start,
+        window_end=window_end,
+    )
+    vehicle_availability = _load_vehicle_availability(
+        session,
+        window_start=window_start,
+        window_end=window_end,
+    )
+    committed_driver_windows, committed_vehicle_windows = _load_committed_run_windows(
+        session,
+        window_start=window_start,
+        window_end=window_end,
+    )
 
     proposals: list[PlanningRunProposal] = []
     reasons: dict[int, list[str]] = {}
@@ -85,10 +104,10 @@ def build_planning_proposal(
     for group in grouped_requests:
         for request_slice in _chunk_request_ids(group.request_ids, heuristics.max_occupancy):
             run_window_start = min(
-                request.pickup_window_start for request in pending_requests if request.id in request_slice
+                requests_by_id[request_id].pickup_window_start for request_id in request_slice
             )
             run_window_end = max(
-                request.pickup_window_end for request in pending_requests if request.id in request_slice
+                requests_by_id[request_id].pickup_window_end for request_id in request_slice
             )
 
             selected_driver_id = _select_driver(
@@ -98,7 +117,8 @@ def build_planning_proposal(
                 committed_driver_windows,
             )
             if selected_driver_id is None:
-                _append_reason(reasons, request_slice, "driver_unavailable")
+                if driver_availability:
+                    _append_reason(reasons, request_slice, "driver_unavailable")
                 continue
 
             required_capacity = len(request_slice)
@@ -110,7 +130,8 @@ def build_planning_proposal(
                 committed_vehicle_windows,
             )
             if selected_vehicle_id is None:
-                _append_reason(reasons, request_slice, "vehicle_unavailable_or_capacity")
+                if vehicle_availability:
+                    _append_reason(reasons, request_slice, "vehicle_unavailable_or_capacity")
                 continue
 
             committed_driver_windows.setdefault(selected_driver_id, []).append(
@@ -258,12 +279,19 @@ def _is_group_compatible(
     return distance_meters <= max_detour_meters
 
 
-def _load_locations_by_id(session: Session) -> dict[int, Location]:
-    locations = session.exec(select(Location)).all()
+def _load_locations_by_id(session: Session, location_ids: set[int]) -> dict[int, Location]:
+    if not location_ids:
+        return {}
+
+    locations = session.exec(select(Location).where(Location.id.in_(location_ids))).all()
     return {location.id: location for location in locations if location.id is not None}
 
 
-def _load_driver_availability(session: Session) -> dict[int, list[_AvailabilityWindow]]:
+def _load_driver_availability(
+    session: Session,
+    window_start: datetime,
+    window_end: datetime,
+) -> dict[int, list[_AvailabilityWindow]]:
     driver_windows: dict[int, list[_AvailabilityWindow]] = {}
     active_driver_ids = {
         driver.id
@@ -271,7 +299,12 @@ def _load_driver_availability(session: Session) -> dict[int, list[_AvailabilityW
         if driver.id is not None
     }
 
-    for window in session.exec(select(DriverAvailabilityWindow)).all():
+    availability_statement = (
+        select(DriverAvailabilityWindow)
+        .where(DriverAvailabilityWindow.start_time < window_end)
+        .where(DriverAvailabilityWindow.end_time > window_start)
+    )
+    for window in session.exec(availability_statement).all():
         if window.driver_id not in active_driver_ids:
             continue
 
@@ -285,7 +318,11 @@ def _load_driver_availability(session: Session) -> dict[int, list[_AvailabilityW
     return dict(sorted(driver_windows.items()))
 
 
-def _load_vehicle_availability(session: Session) -> dict[int, tuple[int, list[_AvailabilityWindow]]]:
+def _load_vehicle_availability(
+    session: Session,
+    window_start: datetime,
+    window_end: datetime,
+) -> dict[int, tuple[int, list[_AvailabilityWindow]]]:
     vehicles = [
         vehicle
         for vehicle in session.exec(select(Vehicle).where(Vehicle.is_active == True)).all()  # noqa: E712
@@ -294,7 +331,12 @@ def _load_vehicle_availability(session: Session) -> dict[int, tuple[int, list[_A
     vehicle_capacities = {vehicle.id: vehicle.capacity for vehicle in vehicles}
 
     vehicle_windows: dict[int, list[_AvailabilityWindow]] = {vehicle.id: [] for vehicle in vehicles}
-    for window in session.exec(select(VehicleAvailabilityWindow)).all():
+    availability_statement = (
+        select(VehicleAvailabilityWindow)
+        .where(VehicleAvailabilityWindow.start_time < window_end)
+        .where(VehicleAvailabilityWindow.end_time > window_start)
+    )
+    for window in session.exec(availability_statement).all():
         if window.vehicle_id not in vehicle_windows:
             continue
 
@@ -313,9 +355,18 @@ def _load_vehicle_availability(session: Session) -> dict[int, tuple[int, list[_A
 
 def _load_committed_run_windows(
     session: Session,
+    window_start: datetime,
+    window_end: datetime,
 ) -> tuple[dict[int, list[_AvailabilityWindow]], dict[int, list[_AvailabilityWindow]]]:
     committed_statuses = (TripRunStatus.PLANNED, TripRunStatus.ACTIVE)
-    committed_runs = session.exec(select(TripRun).where(TripRun.status.in_(committed_statuses))).all()
+    committed_statement = (
+        select(TripRun)
+        .where(TripRun.status.in_(committed_statuses))
+        .where(TripRun.window_start < window_end)
+        .where(TripRun.window_end > window_start)
+        .where(or_(TripRun.driver_id.is_not(None), TripRun.vehicle_id.is_not(None)))
+    )
+    committed_runs = session.exec(committed_statement).all()
 
     driver_windows: dict[int, list[_AvailabilityWindow]] = {}
     vehicle_windows: dict[int, list[_AvailabilityWindow]] = {}
