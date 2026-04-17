@@ -1,5 +1,6 @@
 from datetime import datetime
 
+import pytest
 from sqlmodel import select
 
 from app.models.dispatch_models import TripRequest, TripRequestStatus, TripRun, TripRunStatus
@@ -8,10 +9,12 @@ from app.models.location_models import Location
 from app.models.vehicle_models import VehicleAvailabilityWindow
 from app.services.planning_engine import (
     PlanningHeuristics,
+    PlanningScoreWeights,
     build_planning_proposal,
     group_requests_by_destination_and_window,
     load_pending_trip_requests,
 )
+from app.services.routing_estimates import haversine_distance_meters
 
 
 def _request(
@@ -236,3 +239,125 @@ def test_grouping_sensitive_to_pickup_tolerance_and_max_detour(session):
     assert [group.request_ids for group in loose_groups] == [[601, 602]]
     assert [group.request_ids for group in tight_detour_groups] == [[601], [602]]
     assert [group.request_ids for group in tight_tolerance_groups] == [[601], [602]]
+
+
+def test_build_planning_proposal_includes_weighted_score_metrics(session):
+    session.add_all(
+        [
+            DriverAvailabilityWindow(driver_id=1, start_time=datetime(2026, 4, 26, 8, 0), end_time=datetime(2026, 4, 26, 12, 0)),
+            VehicleAvailabilityWindow(vehicle_id=1, start_time=datetime(2026, 4, 26, 8, 0), end_time=datetime(2026, 4, 26, 12, 0)),
+            _request(701, 1, 1, 2, datetime(2026, 4, 26, 9, 0), datetime(2026, 4, 26, 9, 20)),
+        ]
+    )
+    session.commit()
+
+    score_weights = PlanningScoreWeights(
+        total_minutes=-0.1,
+        total_miles=-0.5,
+        on_time_reliability=2.0,
+        riders_served=1.5,
+        load_balance=1.0,
+    )
+    proposal = build_planning_proposal(
+        session,
+        window_start=datetime(2026, 4, 26, 8, 0),
+        window_end=datetime(2026, 4, 26, 12, 0),
+        score_weights=score_weights,
+    )
+
+    assert len(proposal.runs) == 1
+    run = proposal.runs[0]
+    metrics = run["score_metrics"]
+    assert metrics["total_minutes"] == 20.0
+    expected_miles = haversine_distance_meters(37.7749, -122.4194, 37.7840, -122.4090) / 1609.344
+    assert metrics["total_miles"] == pytest.approx(expected_miles, rel=1e-6)
+    assert metrics["on_time_reliability"] == 1.0
+    assert metrics["riders_served"] == 1.0
+    assert metrics["load_balance"] == 1.0
+    expected_score = (
+        (score_weights.total_minutes * metrics["total_minutes"])
+        + (score_weights.total_miles * metrics["total_miles"])
+        + (score_weights.on_time_reliability * metrics["on_time_reliability"])
+        + (score_weights.riders_served * metrics["riders_served"])
+        + (score_weights.load_balance * metrics["load_balance"])
+    )
+    assert run["score"] == pytest.approx(expected_score, rel=1e-9)
+
+
+def test_build_planning_proposal_uses_deterministic_tie_breaking(session):
+    session.add_all(
+        [
+            DriverAvailabilityWindow(driver_id=1, start_time=datetime(2026, 4, 27, 8, 0), end_time=datetime(2026, 4, 27, 12, 0)),
+            DriverAvailabilityWindow(driver_id=2, start_time=datetime(2026, 4, 27, 8, 0), end_time=datetime(2026, 4, 27, 12, 0)),
+            VehicleAvailabilityWindow(vehicle_id=1, start_time=datetime(2026, 4, 27, 8, 0), end_time=datetime(2026, 4, 27, 12, 0)),
+            VehicleAvailabilityWindow(vehicle_id=2, start_time=datetime(2026, 4, 27, 8, 0), end_time=datetime(2026, 4, 27, 12, 0)),
+            _request(801, 1, 1, 2, datetime(2026, 4, 27, 9, 0), datetime(2026, 4, 27, 9, 15)),
+            _request(802, 2, 3, 2, datetime(2026, 4, 27, 9, 0), datetime(2026, 4, 27, 9, 15)),
+        ]
+    )
+    session.commit()
+
+    first = build_planning_proposal(
+        session,
+        window_start=datetime(2026, 4, 27, 8, 0),
+        window_end=datetime(2026, 4, 27, 12, 0),
+        heuristics=PlanningHeuristics(pickup_window_tolerance_minutes=0, max_detour_meters=1, max_occupancy=1),
+        score_weights=PlanningScoreWeights(
+            total_minutes=-1.0,
+            total_miles=0.0,
+            on_time_reliability=0.0,
+            riders_served=0.0,
+            load_balance=0.0,
+        ),
+    )
+    second = build_planning_proposal(
+        session,
+        window_start=datetime(2026, 4, 27, 8, 0),
+        window_end=datetime(2026, 4, 27, 12, 0),
+        heuristics=PlanningHeuristics(pickup_window_tolerance_minutes=0, max_detour_meters=1, max_occupancy=1),
+        score_weights=PlanningScoreWeights(
+            total_minutes=-1.0,
+            total_miles=0.0,
+            on_time_reliability=0.0,
+            riders_served=0.0,
+            load_balance=0.0,
+        ),
+    )
+
+    assert first.runs == second.runs
+    assert [(run["driver_id"], run["vehicle_id"], run["request_ids"]) for run in first.runs] == [
+        (1, 1, [801]),
+        (2, 2, [802]),
+    ]
+
+
+def test_build_planning_proposal_load_balance_prefers_less_loaded_driver_on_follow_up_run(session):
+    session.add_all(
+        [
+            DriverAvailabilityWindow(driver_id=1, start_time=datetime(2026, 4, 28, 8, 0), end_time=datetime(2026, 4, 28, 12, 0)),
+            DriverAvailabilityWindow(driver_id=2, start_time=datetime(2026, 4, 28, 8, 0), end_time=datetime(2026, 4, 28, 12, 0)),
+            VehicleAvailabilityWindow(vehicle_id=1, start_time=datetime(2026, 4, 28, 8, 0), end_time=datetime(2026, 4, 28, 12, 0)),
+            VehicleAvailabilityWindow(vehicle_id=2, start_time=datetime(2026, 4, 28, 8, 0), end_time=datetime(2026, 4, 28, 12, 0)),
+            _request(901, 1, 1, 2, datetime(2026, 4, 28, 9, 0), datetime(2026, 4, 28, 9, 10)),
+            _request(902, 2, 3, 2, datetime(2026, 4, 28, 10, 0), datetime(2026, 4, 28, 10, 10)),
+        ]
+    )
+    session.commit()
+
+    proposal = build_planning_proposal(
+        session,
+        window_start=datetime(2026, 4, 28, 8, 0),
+        window_end=datetime(2026, 4, 28, 12, 0),
+        heuristics=PlanningHeuristics(pickup_window_tolerance_minutes=0, max_detour_meters=1, max_occupancy=1),
+        score_weights=PlanningScoreWeights(
+            total_minutes=0.0,
+            total_miles=0.0,
+            on_time_reliability=0.0,
+            riders_served=0.0,
+            load_balance=1.0,
+        ),
+    )
+
+    assert len(proposal.runs) == 2
+    assert proposal.runs[0]["driver_id"] == 1
+    assert proposal.runs[1]["driver_id"] == 2

@@ -1,12 +1,13 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import datetime, timedelta
 from typing import Optional
 
 from sqlmodel import Session, select
 from sqlalchemy import or_
 
+from app.config import settings
 from app.models.dispatch_models import TripRequest, TripRequestStatus, TripRun, TripRunStatus
 from app.models.driver_models import Driver, DriverAvailabilityWindow
 from app.models.location_models import Location
@@ -46,6 +47,31 @@ class PlanningProposal:
     reasons: dict[int, list[str]]
 
 
+@dataclass(frozen=True)
+class PlanningScoreWeights:
+    total_minutes: float
+    total_miles: float
+    on_time_reliability: float
+    riders_served: float
+    load_balance: float
+
+
+@dataclass(frozen=True)
+class _ScoredRunProposal:
+    proposal: PlanningRunProposal
+    score: float
+    metrics: "PlanningScoreMetrics"
+
+
+@dataclass(frozen=True)
+class PlanningScoreMetrics:
+    total_minutes: float
+    total_miles: float
+    on_time_reliability: float
+    riders_served: float
+    load_balance: float
+
+
 @dataclass
 class _MutableGroup:
     anchor_request: TripRequest
@@ -65,8 +91,10 @@ def build_planning_proposal(
     window_start: datetime,
     window_end: datetime,
     heuristics: Optional[PlanningHeuristics] = None,
+    score_weights: Optional[PlanningScoreWeights] = None,
 ) -> PlanningProposal:
     heuristics = heuristics or PlanningHeuristics()
+    score_weights = score_weights or _default_score_weights()
 
     pending_requests = load_pending_trip_requests(session, window_start=window_start, window_end=window_end)
     requests_by_id = {request.id: request for request in pending_requests if request.id is not None}
@@ -98,8 +126,10 @@ def build_planning_proposal(
         window_end=window_end,
     )
 
-    proposals: list[PlanningRunProposal] = []
+    proposals: list[_ScoredRunProposal] = []
     reasons: dict[int, list[str]] = {}
+    driver_assigned_run_counts: dict[int, int] = {driver_id: 0 for driver_id in driver_availability}
+    available_driver_count = len(driver_availability)
 
     for group in grouped_requests:
         for request_slice in _chunk_request_ids(group.request_ids, heuristics.max_occupancy):
@@ -110,29 +140,63 @@ def build_planning_proposal(
                 requests_by_id[request_id].pickup_window_end for request_id in request_slice
             )
 
-            selected_driver_id = _select_driver(
+            eligible_driver_ids = _eligible_driver_ids(
                 run_window_start,
                 run_window_end,
                 driver_availability,
                 committed_driver_windows,
             )
-            if selected_driver_id is None:
+            if not eligible_driver_ids:
                 if driver_availability:
                     _append_reason(reasons, request_slice, "driver_unavailable")
                 continue
 
             required_capacity = len(request_slice)
-            selected_vehicle_id = _select_vehicle(
+            eligible_vehicle_ids = _eligible_vehicle_ids(
                 run_window_start,
                 run_window_end,
                 required_capacity,
                 vehicle_availability,
                 committed_vehicle_windows,
             )
-            if selected_vehicle_id is None:
+            if not eligible_vehicle_ids:
                 if vehicle_availability:
                     _append_reason(reasons, request_slice, "vehicle_unavailable_or_capacity")
                 continue
+
+            best_scored_run: Optional[_ScoredRunProposal] = None
+            best_rank_key: Optional[tuple[float, int, int, tuple[int, ...]]] = None
+            for driver_id in eligible_driver_ids:
+                metrics = _score_metrics(
+                    request_slice=request_slice,
+                    requests_by_id=requests_by_id,
+                    location_by_id=location_by_id,
+                    driver_assigned_run_counts=driver_assigned_run_counts,
+                    driver_id=driver_id,
+                    available_driver_count=available_driver_count,
+                )
+                for vehicle_id in eligible_vehicle_ids:
+                    candidate = _ScoredRunProposal(
+                        proposal=PlanningRunProposal(
+                            request_ids=sorted(request_slice),
+                            pickup_window_start=run_window_start,
+                            pickup_window_end=run_window_end,
+                            driver_id=driver_id,
+                            vehicle_id=vehicle_id,
+                        ),
+                        score=_weighted_total(metrics, score_weights),
+                        metrics=metrics,
+                    )
+                    candidate_rank_key = _scored_run_rank_key(candidate)
+                    if best_rank_key is None or candidate_rank_key < best_rank_key:
+                        best_rank_key = candidate_rank_key
+                        best_scored_run = candidate
+
+            if best_scored_run is None:
+                continue
+
+            selected_driver_id = best_scored_run.proposal.driver_id
+            selected_vehicle_id = best_scored_run.proposal.vehicle_id
 
             committed_driver_windows.setdefault(selected_driver_id, []).append(
                 _AvailabilityWindow(start_time=run_window_start, end_time=run_window_end)
@@ -140,18 +204,9 @@ def build_planning_proposal(
             committed_vehicle_windows.setdefault(selected_vehicle_id, []).append(
                 _AvailabilityWindow(start_time=run_window_start, end_time=run_window_end)
             )
-
-            proposals.append(
-                PlanningRunProposal(
-                    request_ids=sorted(request_slice),
-                    pickup_window_start=run_window_start,
-                    pickup_window_end=run_window_end,
-                    driver_id=selected_driver_id,
-                    vehicle_id=selected_vehicle_id,
-                )
-            )
-
-    assigned_request_ids = {request_id for proposal in proposals for request_id in proposal.request_ids}
+            driver_assigned_run_counts[selected_driver_id] = driver_assigned_run_counts.get(selected_driver_id, 0) + 1
+            proposals.append(best_scored_run)
+    assigned_request_ids = {request_id for proposal in proposals for request_id in proposal.proposal.request_ids}
     pending_request_ids = {request.id for request in pending_requests if request.id is not None}
     unassigned_request_ids = sorted(pending_request_ids - assigned_request_ids)
 
@@ -160,15 +215,17 @@ def build_planning_proposal(
 
     runs_payload = [
         {
-            "request_ids": proposal.request_ids,
-            "pickup_window_start": proposal.pickup_window_start.isoformat(),
-            "pickup_window_end": proposal.pickup_window_end.isoformat(),
-            "driver_id": proposal.driver_id,
-            "vehicle_id": proposal.vehicle_id,
+            "request_ids": proposal.proposal.request_ids,
+            "pickup_window_start": proposal.proposal.pickup_window_start.isoformat(),
+            "pickup_window_end": proposal.proposal.pickup_window_end.isoformat(),
+            "driver_id": proposal.proposal.driver_id,
+            "vehicle_id": proposal.proposal.vehicle_id,
+            "score": proposal.score,
+            "score_metrics": asdict(proposal.metrics),
         }
         for proposal in sorted(
             proposals,
-            key=lambda proposal: (proposal.pickup_window_start, proposal.pickup_window_end, proposal.request_ids),
+            key=_scored_run_rank_key,
         )
     ]
 
@@ -176,6 +233,15 @@ def build_planning_proposal(
         runs=runs_payload,
         unassigned_requests=unassigned_request_ids,
         reasons={request_id: sorted(set(reason_codes)) for request_id, reason_codes in sorted(reasons.items())},
+    )
+
+
+def _scored_run_rank_key(scored_proposal: _ScoredRunProposal) -> tuple[float, int, int, tuple[int, ...]]:
+    return (
+        -scored_proposal.score,
+        scored_proposal.proposal.driver_id,
+        scored_proposal.proposal.vehicle_id,
+        tuple(scored_proposal.proposal.request_ids),
     )
 
 
@@ -387,12 +453,13 @@ def _load_committed_run_windows(
     return dict(sorted(driver_windows.items())), dict(sorted(vehicle_windows.items()))
 
 
-def _select_driver(
+def _eligible_driver_ids(
     run_window_start: datetime,
     run_window_end: datetime,
     driver_availability: dict[int, list[_AvailabilityWindow]],
     blocked_driver_windows: dict[int, list[_AvailabilityWindow]],
-) -> Optional[int]:
+) -> list[int]:
+    eligible_driver_ids: list[int] = []
     for driver_id, availability_windows in driver_availability.items():
         if not _window_fits_any(availability_windows, run_window_start, run_window_end):
             continue
@@ -400,18 +467,19 @@ def _select_driver(
         if _overlaps_any(blocked_driver_windows.get(driver_id, []), run_window_start, run_window_end):
             continue
 
-        return driver_id
+        eligible_driver_ids.append(driver_id)
 
-    return None
+    return sorted(eligible_driver_ids)
 
 
-def _select_vehicle(
+def _eligible_vehicle_ids(
     run_window_start: datetime,
     run_window_end: datetime,
     required_capacity: int,
     vehicle_availability: dict[int, tuple[int, list[_AvailabilityWindow]]],
     blocked_vehicle_windows: dict[int, list[_AvailabilityWindow]],
-) -> Optional[int]:
+) -> list[int]:
+    eligible_vehicle_ids: list[int] = []
     for vehicle_id, (capacity, availability_windows) in vehicle_availability.items():
         if capacity < required_capacity:
             continue
@@ -422,9 +490,9 @@ def _select_vehicle(
         if _overlaps_any(blocked_vehicle_windows.get(vehicle_id, []), run_window_start, run_window_end):
             continue
 
-        return vehicle_id
+        eligible_vehicle_ids.append(vehicle_id)
 
-    return None
+    return sorted(eligible_vehicle_ids)
 
 
 def _window_fits_any(
@@ -483,3 +551,85 @@ def _max_datetime(first: Optional[datetime], second: datetime) -> datetime:
     if first is None:
         return second
     return max(first, second)
+
+
+def _default_score_weights() -> PlanningScoreWeights:
+    return PlanningScoreWeights(
+        total_minutes=settings.planning_total_minutes_weight,
+        total_miles=settings.planning_total_miles_weight,
+        on_time_reliability=settings.planning_on_time_reliability_weight,
+        riders_served=settings.planning_riders_served_weight,
+        load_balance=settings.planning_load_balance_weight,
+    )
+
+
+def _score_metrics(
+    request_slice: list[int],
+    requests_by_id: dict[int, TripRequest],
+    location_by_id: dict[int, Location],
+    driver_assigned_run_counts: dict[int, int],
+    driver_id: int,
+    available_driver_count: int,
+) -> PlanningScoreMetrics:
+    requests = [requests_by_id[request_id] for request_id in request_slice]
+
+    total_minutes = sum(
+        max((request.pickup_window_end - request.pickup_window_start).total_seconds() / 60.0, 0.0)
+        for request in requests
+    )
+    total_miles = sum(_request_distance_miles(request, location_by_id) for request in requests)
+
+    target_pickup_time = max(request.pickup_window_start for request in requests)
+    on_time_hits = sum(
+        1
+        for request in requests
+        if request.pickup_window_start <= target_pickup_time <= request.pickup_window_end
+    )
+    on_time_reliability = on_time_hits / len(requests) if requests else 0.0
+    riders_served = float(len(requests))
+
+    current_driver_load = driver_assigned_run_counts.get(driver_id, 0)
+    load_balance = 1.0 - (
+        current_driver_load / max(available_driver_count, 1)
+    )
+
+    return PlanningScoreMetrics(
+        total_minutes=total_minutes,
+        total_miles=total_miles,
+        on_time_reliability=on_time_reliability,
+        riders_served=riders_served,
+        load_balance=load_balance,
+    )
+
+
+def _request_distance_miles(request: TripRequest, location_by_id: dict[int, Location]) -> float:
+    pickup_location = location_by_id.get(request.pickup_location_id)
+    dropoff_location = location_by_id.get(request.dropoff_location_id)
+    if pickup_location is None or dropoff_location is None:
+        return 0.0
+
+    if (
+        pickup_location.latitude is None
+        or pickup_location.longitude is None
+        or dropoff_location.latitude is None
+        or dropoff_location.longitude is None
+    ):
+        return 0.0
+
+    meters = haversine_distance_meters(
+        pickup_location.latitude,
+        pickup_location.longitude,
+        dropoff_location.latitude,
+        dropoff_location.longitude,
+    )
+    return meters / 1609.344
+
+
+def _weighted_total(metrics: PlanningScoreMetrics, weights: PlanningScoreWeights) -> float:
+    return (
+        (weights.total_minutes * metrics.total_minutes)
+        + (weights.total_miles * metrics.total_miles)
+        + (weights.on_time_reliability * metrics.on_time_reliability)
+        + (weights.riders_served * metrics.riders_served)
+        + (weights.load_balance * metrics.load_balance)
+    )
