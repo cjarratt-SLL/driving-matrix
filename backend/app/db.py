@@ -1,4 +1,5 @@
 from sqlmodel import Session, SQLModel, create_engine
+from app.models.dispatch_models import RunAssignment, TripRequest, TripRun
 from app.models.driver_models import Driver
 from app.models.location_models import Location
 from app.models.resident_models import Resident
