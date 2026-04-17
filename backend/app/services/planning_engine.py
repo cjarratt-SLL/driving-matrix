@@ -122,7 +122,6 @@ def build_planning_proposal(
     proposals: list[_ScoredRunProposal] = []
     reasons: dict[int, list[str]] = {}
     driver_assigned_run_counts: dict[int, int] = {driver_id: 0 for driver_id in driver_availability}
-    available_driver_count = len(driver_availability)
 
     for group in grouped_requests:
         for request_slice in _chunk_request_ids(group.request_ids, heuristics.max_occupancy):
@@ -169,7 +168,6 @@ def build_planning_proposal(
                         driver_id=driver_id,
                         vehicle_id=vehicle_id,
                         vehicle_capacity=vehicle_capacity,
-                        available_driver_count=available_driver_count,
                     )
                     scored_candidates.append(
                         _ScoredRunProposal(
@@ -572,7 +570,6 @@ def _score_metrics(
     driver_id: int,
     vehicle_id: int,
     vehicle_capacity: int,
-    available_driver_count: int,
 ) -> dict[str, float]:
     requests = [requests_by_id[request_id] for request_id in request_slice]
 
@@ -592,9 +589,9 @@ def _score_metrics(
     riders_served = float(len(requests))
 
     current_driver_load = driver_assigned_run_counts.get(driver_id, 0)
-    load_balance = 1.0 - (
-        current_driver_load / max(available_driver_count, 1)
-    )
+    max_load = max(driver_assigned_run_counts.values(), default=0)
+    load_balance = 1.0 - (current_driver_load / max(max_load, 1))
+    load_balance = min(1.0, max(0.0, load_balance))
     bounded_vehicle_capacity = max(vehicle_capacity, 1)
     capacity_utilization = len(requests) / bounded_vehicle_capacity
     empty_seat_penalty = (bounded_vehicle_capacity - len(requests)) / bounded_vehicle_capacity
