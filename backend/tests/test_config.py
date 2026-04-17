@@ -40,6 +40,24 @@ def test_planning_weight_env_invalid_values_fallback(monkeypatch):
 
 
 def test_planning_weight_env_empty_values_fallback(monkeypatch):
+    # Explicitly set env vars to empty strings; _float_env should treat these as missing
+    monkeypatch.setenv("PLANNING_TOTAL_MINUTES_WEIGHT", "")
+    monkeypatch.setenv("PLANNING_TOTAL_MILES_WEIGHT", "")
+    monkeypatch.setenv("PLANNING_ON_TIME_RELIABILITY_WEIGHT", "")
+    monkeypatch.setenv("PLANNING_RIDERS_SERVED_WEIGHT", "")
+    monkeypatch.setenv("PLANNING_LOAD_BALANCE_WEIGHT", "")
+
+    config_module = _reload_config()
+
+    # Empty strings should fall back to the same defaults used when env vars are missing/invalid
+    assert config_module.settings.planning_total_minutes_weight == -0.05
+    assert config_module.settings.planning_total_miles_weight == -1.0
+    assert config_module.settings.planning_on_time_reliability_weight == 50.0
+    assert config_module.settings.planning_riders_served_weight == 10.0
+    assert config_module.settings.planning_load_balance_weight == 5.0
+
+
+def test_planning_weight_env_empty_values_fallback(monkeypatch):
     monkeypatch.setenv("PLANNING_TOTAL_MINUTES_WEIGHT", "")
     monkeypatch.setenv("PLANNING_TOTAL_MILES_WEIGHT", "   ")
     monkeypatch.setenv("PLANNING_ON_TIME_RELIABILITY_WEIGHT", "")
